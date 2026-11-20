@@ -28,21 +28,107 @@
     el.className = `notice-banner notice-${type}`;
   }
 
+  let loginExpanded = false;
+
+  function ensureLoginToggle() {
+    const loginForm = $("loginForm");
+    const authBox = loginForm?.parentElement || document.querySelector(".auth-box");
+    if (!loginForm || !authBox || $("loginToggleBtn")) return;
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.id = "loginToggleBtn";
+    toggleBtn.className = "btn btn-sm btn-ghost";
+    toggleBtn.textContent = "Contributor / Admin Login";
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "auth-toggle-row";
+    loginForm.parentNode.insertBefore(wrapper, loginForm);
+    wrapper.appendChild(toggleBtn);
+    loginForm.classList.add("login-panel-compact");
+    wrapper.appendChild(loginForm);
+
+    toggleBtn.addEventListener("click", () => {
+      loginExpanded = !loginExpanded;
+      loginForm.hidden = !loginExpanded;
+      toggleBtn.textContent = loginExpanded ? "Hide Login" : "Contributor / Admin Login";
+      if (loginExpanded) {
+        $("accessCodeInput")?.focus();
+      }
+    });
+  }
+
   function renderSessionBadge() {
+    ensureLoginToggle();
     const infoEl = $("sessionStatus");
     const logoutBtn = $("logoutBtn");
+    const loginForm = $("loginForm");
+    const toggleBtn = $("loginToggleBtn");
     if (!infoEl) return;
+
     if (session) {
+      loginExpanded = false;
       infoEl.textContent = `Signed in: ${session.full_name} (${session.is_admin ? "Admin" : session.role_title})`;
+      if (toggleBtn) toggleBtn.hidden = true;
+      if (loginForm) loginForm.hidden = true;
       if (logoutBtn) logoutBtn.hidden = false;
     } else {
-      infoEl.textContent = "Guest mode (Browse, Practice, Listen & Request Terms). Enter a code to contribute or moderate.";
+      infoEl.textContent = "Guest mode (Browse, Practice, Listen & Request Terms).";
+      if (toggleBtn) {
+        toggleBtn.hidden = false;
+        toggleBtn.textContent = loginExpanded ? "Hide Login" : "Contributor / Admin Login";
+      }
+      if (loginForm) {
+        loginForm.hidden = !loginExpanded;
+      }
       if (logoutBtn) logoutBtn.hidden = true;
     }
+
     const adminTab = document.querySelector('[data-tab="adminTab"]');
     if (adminTab) {
       adminTab.hidden = !(session && session.is_admin);
     }
+    renderContributeGuestNotice();
+  }
+
+  function openLoginPrompt() {
+    ensureLoginToggle();
+    loginExpanded = true;
+    const toggleBtn = $("loginToggleBtn");
+    const loginForm = $("loginForm");
+    if (toggleBtn) {
+      toggleBtn.hidden = false;
+      toggleBtn.textContent = "Hide Login";
+    }
+    if (loginForm) {
+      loginForm.hidden = false;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => {
+      $("accessCodeInput")?.focus();
+    }, 150);
+  }
+
+  function renderContributeGuestNotice() {
+    const tabEl = $("contributeTab");
+    if (!tabEl) return;
+    let notice = $("contributeGuestNotice");
+    if (session) {
+      if (notice) notice.hidden = true;
+      return;
+    }
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "contributeGuestNotice";
+      notice.className = "guest-auth-callout";
+      notice.innerHTML = `
+        <span><strong>Guest mode:</strong> You can request missing terms here. Contributors and admins can sign in with an access code to submit full phrase edits or voice clips.</span>
+        <button type="button" class="btn btn-sm btn-secondary" id="openLoginFromContributeBtn">Enter Contributor / Admin Code</button>
+      `;
+      tabEl.prepend(notice);
+      $("openLoginFromContributeBtn")?.addEventListener("click", openLoginPrompt);
+    }
+    notice.hidden = false;
   }
 
   function populateSectionFilter() {
@@ -549,6 +635,7 @@
       panel.hidden = panel.id !== tabId;
     });
     if (tabId === "practiceTab") renderPracticeCard();
+    if (tabId === "contributeTab") renderContributeGuestNotice();
     if (tabId === "adminTab") renderAdminDashboard();
   }
 
@@ -587,6 +674,7 @@
       try {
         session = await DB.loginWithCode($("accessCodeInput").value);
         $("accessCodeInput").value = "";
+        loginExpanded = false;
         renderSessionBadge();
         setStatusBanner(`Welcome, ${session.full_name}.`, "success");
         if (session.is_admin) await renderAdminDashboard();
