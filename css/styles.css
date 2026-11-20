@@ -378,3 +378,26 @@ textarea:focus-visible {
 @media (max-width: 768px) {
   .controls-bar { grid-template-columns: 1fr; }
 }
+.auth-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.login-panel-compact {
+  margin-top: 6px;
+}
+.guest-auth-callout {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+}
