@@ -10,6 +10,8 @@
   let bedsideMode = false;
   let activeSection = "ALL";
   let activeStatus = "ALL";
+  let practiceSection = "ALL";
+  let practiceDirection = "en_to_id"; // "en_to_id" | "id_to_en"
   let practiceIndex = 0;
   let practiceStreak = 0;
   let practiceRevealed = false;
@@ -101,8 +103,10 @@
           <button type="button" class="btn btn-primary" id="openRequestFromFallback">Request "${escapeHtml(q || "Missing Term")}"</button>
         `;
         $("openRequestFromFallback")?.addEventListener("click", () => {
-          $("reqEnglish").value = q;
+          if ($("subEnglish")) $("subEnglish").value = q;
+          if ($("subType")) $("subType").value = "term_request";
           switchTab("contributeTab");
+          window.scrollTo({ top: 0, behavior: "smooth" });
         });
         fallbackEl.querySelectorAll("[data-jump-phrase]").forEach((btn) => {
           btn.addEventListener("click", () => {
@@ -180,39 +184,102 @@
   function renderPracticeCard() {
     const cardEl = $("practiceCard");
     if (!cardEl) return;
-    const pool = phrases.filter((p) => p.idoma && p.status !== "missing");
+
+    const translated = phrases.filter((p) => p.idoma && p.status !== "missing");
+    const sections = Array.from(new Set(translated.map((p) => p.section).filter(Boolean)));
+    const pool = practiceSection === "ALL"
+      ? translated
+      : translated.filter((p) => p.section === practiceSection);
+
+    const directionLabel = practiceDirection === "en_to_id"
+      ? "Direction: English → Idoma"
+      : "Direction: Idoma → English";
+
+    const controlsHtml = `
+      <div class="practice-controls">
+        <select id="practiceSectionSelect" aria-label="Filter practice cards by section" style="max-width:250px;">
+          <option value="ALL">All Sections (${translated.length})</option>
+          ${sections.map((s) => `<option value="${escapeHtml(s)}" ${s === practiceSection ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+        </select>
+        <button type="button" class="btn btn-sm btn-secondary" id="toggleDirectionBtn">${directionLabel}</button>
+      </div>
+    `;
+
     if (pool.length === 0) {
-      cardEl.innerHTML = "<p>No translated phrases available for practice yet.</p>";
+      cardEl.innerHTML = `
+        <div class="practice-meta">
+          ${controlsHtml}
+          <span>Streak: <strong>${practiceStreak}</strong></span>
+        </div>
+        <p>No translated phrases available for this selection yet.</p>
+      `;
+      $("practiceSectionSelect")?.addEventListener("change", (e) => {
+        practiceSection = e.target.value;
+        practiceIndex = 0;
+        practiceRevealed = false;
+        renderPracticeCard();
+      });
+      $("toggleDirectionBtn")?.addEventListener("click", () => {
+        practiceDirection = practiceDirection === "en_to_id" ? "id_to_en" : "en_to_id";
+        practiceRevealed = false;
+        renderPracticeCard();
+      });
       return;
     }
+
     const item = pool[practiceIndex % pool.length];
     const clip = audioMap[item.id];
+    const isReverse = practiceDirection === "id_to_en";
+
+    const promptText = isReverse ? item.idoma : item.english;
+    const answerText = isReverse ? item.english : item.idoma;
+    const promptInstruction = isReverse
+      ? "Read or listen to the Idoma phrase and recall its English meaning and clinical context first, then reveal to check."
+      : "Say or recall the Idoma phrase and pitch contour first, then reveal to check.";
 
     cardEl.innerHTML = `
       <div class="practice-meta">
-        <span>Card ${(practiceIndex % pool.length) + 1} of ${pool.length}</span>
-        <span>Streak: <strong>${practiceStreak}</strong></span>
+        ${controlsHtml}
+        <span>Card ${(practiceIndex % pool.length) + 1} of ${pool.length} · Streak: <strong>${practiceStreak}</strong></span>
       </div>
-      <div class="sec-tag">${escapeHtml(item.section)}</div>
-      <h3 class="english-term">${escapeHtml(item.english)}</h3>
-      <p class="muted">Say or recall the Idoma phrase and pitch contour first, then reveal to check.</p>
+      <div class="sec-tag">${escapeHtml(item.section)}${item.subsection ? " · " + escapeHtml(item.subsection) : ""}</div>
+      <h3 class="english-term">${escapeHtml(promptText)}</h3>
+      ${isReverse && item.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(item.syllables)}</code></div>` : ""}
+      ${isReverse && clip && clip.url ? `<div class="card-actions"><button type="button" class="btn btn-sm btn-secondary" id="practicePlayAudio">Play Approved Audio</button></div>` : ""}
+      <p class="muted">${promptInstruction}</p>
       ${practiceRevealed ? `
         <div class="reveal-box">
-          <div class="idoma-term">${escapeHtml(item.idoma)}</div>
-          ${item.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(item.syllables)}</code></div>` : ""}
+          <div class="idoma-term">${escapeHtml(answerText)}</div>
+          ${!isReverse && item.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(item.syllables)}</code></div>` : ""}
+          ${item.phonetic ? `<div class="meta-line"><strong>Pronunciation hint:</strong> ${escapeHtml(item.phonetic)}</div>` : ""}
           ${item.tone ? `<div class="tone-alert">${escapeHtml(item.tone)}</div>` : ""}
           ${item.clinical ? `<div class="clinical-note">${escapeHtml(item.clinical)}</div>` : ""}
-          ${clip && clip.url ? `<button type="button" class="btn btn-sm btn-secondary" id="practicePlayAudio">Play Approved Audio</button>` : ""}
+          ${!isReverse && clip && clip.url ? `<div class="card-actions"><button type="button" class="btn btn-sm btn-secondary" id="practicePlayAudio">Play Approved Audio</button></div>` : ""}
         </div>
         <div class="practice-buttons">
           <button type="button" class="btn btn-primary" id="markRecalledBtn">Recalled Well (+1 Streak)</button>
           <button type="button" class="btn btn-secondary" id="needsReviewBtn">Needs More Practice</button>
+          <button type="button" class="btn btn-ghost" id="shufflePracticeBtn">Random Card</button>
         </div>
       ` : `
-        <button type="button" class="btn btn-primary" id="revealAnswerBtn">Reveal Answer</button>
+        <div class="practice-buttons">
+          <button type="button" class="btn btn-primary" id="revealAnswerBtn">Reveal Answer</button>
+          <button type="button" class="btn btn-ghost" id="shufflePracticeBtn">Random Card</button>
+        </div>
       `}
     `;
 
+    $("practiceSectionSelect")?.addEventListener("change", (e) => {
+      practiceSection = e.target.value;
+      practiceIndex = 0;
+      practiceRevealed = false;
+      renderPracticeCard();
+    });
+    $("toggleDirectionBtn")?.addEventListener("click", () => {
+      practiceDirection = practiceDirection === "en_to_id" ? "id_to_en" : "en_to_id";
+      practiceRevealed = false;
+      renderPracticeCard();
+    });
     $("revealAnswerBtn")?.addEventListener("click", () => {
       practiceRevealed = true;
       renderPracticeCard();
@@ -229,6 +296,15 @@
     $("needsReviewBtn")?.addEventListener("click", () => {
       practiceStreak = 0;
       practiceIndex += 1;
+      practiceRevealed = false;
+      renderPracticeCard();
+    });
+    $("shufflePracticeBtn")?.addEventListener("click", () => {
+      if (pool.length > 1) {
+        let next = Math.floor(Math.random() * pool.length);
+        if (next === (practiceIndex % pool.length)) next = (next + 1) % pool.length;
+        practiceIndex = next;
+      }
       practiceRevealed = false;
       renderPracticeCard();
     });
@@ -369,7 +445,6 @@
         </div>
       `;
 
-      // Bind contributor form
       $("contribForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
@@ -507,7 +582,6 @@
       renderPhrases();
     });
 
-    // Access code login
     $("loginForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
@@ -529,7 +603,6 @@
       setStatusBanner("Signed out.", "info");
     });
 
-    // Contributor submission / public term request
     $("phraseSubForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
@@ -568,7 +641,6 @@
       }
     });
 
-    // Audio recording & upload
     $("recordToggleBtn")?.addEventListener("click", async () => {
       try {
         if (!isRecording) {
@@ -617,7 +689,6 @@
       }
     });
 
-    // Listen Mode: Best-Match check + Guided Response Cards
     $("listenRecordBtn")?.addEventListener("click", async () => {
       try {
         if (!isRecording) {
