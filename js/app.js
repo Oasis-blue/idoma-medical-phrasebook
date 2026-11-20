@@ -59,6 +59,10 @@
   }
 
   function openLoginBox() {
+    if (session) {
+      renderSessionUI();
+      return;
+    }
     const headerAuthBox = $("headerAuthBox");
     const loginForm = $("loginForm");
     const sessionRow = $("sessionRow");
@@ -911,8 +915,8 @@
     renderPracticeCard();
     renderCredits();
 
-    if (DB.isLive() && fetched.source === "supabase-empty-fallback") {
-      setStatusBanner("Supabase connected! Database table is currently empty—sign in as Admin and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
+    if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
+      setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
     }
   }
 
