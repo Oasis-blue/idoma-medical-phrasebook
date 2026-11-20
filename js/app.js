@@ -1,383 +1,693 @@
-// Main Application Engine
+(function () {
+  const DB = window.PhraseDB;
+  const Matcher = window.AudioMatcher;
 
-let phrases = [];
-let bedsideTray = new Set();
-let audioRecordings = {};
-let registeredContributors = [];
-let requestedQueue = [];
+  let seedPhrases = [];
+  let phrases = [];
+  let audioMap = {};
+  let credits = [];
+  let session = null;
+  let bedsideMode = false;
+  let activeSection = "ALL";
+  let activeStatus = "ALL";
+  let practiceIndex = 0;
+  let practiceStreak = 0;
+  let practiceRevealed = false;
+  let recordedDraft = null;
+  let isRecording = false;
+  let activeAudioEl = null;
 
-let currentTab = 'finder';
-let currentCategory = 'All';
-let currentStatusFilter = 'all';
-let currentSearchQuery = '';
-let isBedsideFocus = false;
-let currentUserRole = 'admin';
+  const $ = (id) => document.getElementById(id);
 
-// Drill State
-let drillIndex = 0;
-let drillStreak = 0;
-let drillQueue = [];
+  function setStatusBanner(msg, type = "info") {
+    const el = $("systemNotice");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `notice-banner notice-${type}`;
+  }
 
-// Mic State
-let mediaRecorder = null;
-let audioChunks = [];
-let isRecording = false;
-let recordingTimerInt = null;
-let recordedBlobUrl = null;
-
-// App Startup
-window.onload = async function() {
-    await initAppPhrases();
-    await renderDynamicCredits();
-    renderCategoryPills();
-    renderPhrases();
-    populateStudioDropdown();
-    renderContributorsList();
-    initDrillSession();
-};
-
-async function initAppPhrases() {
-    const fetched = await dbFetchPhrases();
-    if (fetched && fetched.length > 0) {
-        phrases = fetched;
+  function renderSessionBadge() {
+    const infoEl = $("sessionStatus");
+    const logoutBtn = $("logoutBtn");
+    if (!infoEl) return;
+    if (session) {
+      infoEl.textContent = `Signed in: ${session.full_name} (${session.is_admin ? "Admin" : session.role_title})`;
+      if (logoutBtn) logoutBtn.hidden = false;
     } else {
-        // Load fallback seed data from seed-phrases.json or window fallback
-        try {
-            const res = await fetch('data/seed-phrases.json');
-            phrases = await res.json();
-        } catch(e) {
-            console.error("Seed fetch error:", e);
-        }
+      infoEl.textContent = "Guest mode (Browse, Practice, Listen & Request Terms). Enter a code to contribute or moderate.";
+      if (logoutBtn) logoutBtn.hidden = true;
     }
-}
+    const adminTab = document.querySelector('[data-tab="adminTab"]');
+    if (adminTab) {
+      adminTab.hidden = !(session && session.is_admin);
+    }
+  }
 
-async function renderDynamicCredits() {
-    const contributors = await dbFetchContributors();
-    registeredContributors = contributors;
-    const container = document.getElementById('dynamic-credits-container');
+  function populateSectionFilter() {
+    const sel = $("sectionFilter");
+    if (!sel) return;
+    const sections = Array.from(new Set(phrases.map((p) => p.section).filter(Boolean)));
+    sel.innerHTML = `<option value="ALL">All Clinical Sections (${phrases.length})</option>` +
+      sections.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+    sel.value = activeSection;
+  }
+
+  function getFilteredPhrases() {
+    const q = ($("searchInput")?.value || "").trim().toLowerCase();
+    return phrases.filter((p) => {
+      if (activeSection !== "ALL" && p.section !== activeSection) return false;
+      if (activeStatus !== "ALL" && p.status !== activeStatus) return false;
+      if (!q) return true;
+      const hay = [p.english, p.idoma, p.syllables, p.phonetic, p.tone, p.clinical, p.section, p.subsection]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function statusBadgeHtml(status) {
+    if (status === "verified") return `<span class="badge badge-verified">Verified</span>`;
+    if (status === "missing") return `<span class="badge badge-missing">Missing / Draft Blank</span>`;
+    return `<span class="badge badge-unconfirmed">Unconfirmed / Verify Aloud</span>`;
+  }
+
+  function renderPhrases() {
+    const listEl = $("phraseList");
+    const fallbackEl = $("fallbackBox");
+    const countEl = $("resultCount");
+    if (!listEl) return;
+
+    const q = ($("searchInput")?.value || "").trim();
+    const filtered = getFilteredPhrases();
+    if (countEl) {
+      countEl.textContent = `${filtered.length} of ${phrases.length} entries shown`;
+    }
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = "";
+      if (fallbackEl) {
+        fallbackEl.hidden = false;
+        const keywords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+        const related = phrases
+          .filter((p) => p.idoma && keywords.some((w) => (p.english + " " + p.clinical + " " + p.section).toLowerCase().includes(w)))
+          .slice(0, 4);
+
+        fallbackEl.innerHTML = `
+          <h3>Exact translation not found in verified glossary</h3>
+          <p>Written spelling alone cannot capture Idoma tone, so we do not guess unverified translations. You can request this term below or check related entries:</p>
+          ${related.length
+            ? `<div class="related-list">${related.map((r) => `<button type="button" class="chip-btn" data-jump-phrase="${escapeHtml(r.english)}">${escapeHtml(r.english)} → <strong>${escapeHtml(r.idoma)}</strong></button>`).join("")}</div>`
+            : `<p class="muted">No close keyword matches found.</p>`}
+          <button type="button" class="btn btn-primary" id="openRequestFromFallback">Request "${escapeHtml(q || "Missing Term")}"</button>
+        `;
+        $("openRequestFromFallback")?.addEventListener("click", () => {
+          $("reqEnglish").value = q;
+          switchTab("contributeTab");
+        });
+        fallbackEl.querySelectorAll("[data-jump-phrase]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            $("searchInput").value = btn.getAttribute("data-jump-phrase");
+            renderPhrases();
+          });
+        });
+      }
+      return;
+    }
+
+    if (fallbackEl) fallbackEl.hidden = true;
+
+    listEl.innerHTML = filtered.map((p) => {
+      const clip = audioMap[p.id];
+      const audioBtn = clip && clip.url
+        ? `<button type="button" class="btn btn-sm btn-secondary" data-play-url="${escapeHtml(clip.url)}" data-play-label="${escapeHtml(p.english)}">Play Approved Audio</button>`
+        : `<span class="muted small-note">No approved audio yet</span>`;
+
+      return `
+        <article class="phrase-card ${bedsideMode ? "bedside-card" : ""}">
+          <div class="card-top">
+            <span class="sec-tag">${escapeHtml(p.section)}${p.subsection ? " · " + escapeHtml(p.subsection) : ""}</span>
+            ${statusBadgeHtml(p.status)}
+          </div>
+          <h3 class="english-term">${escapeHtml(p.english)}</h3>
+          <div class="idoma-row">
+            <span class="idoma-term">${p.idoma ? escapeHtml(p.idoma) : "<em>No Idoma entry yet</em>"}</span>
+            ${audioBtn}
+          </div>
+          ${p.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(p.syllables)}</code></div>` : ""}
+          ${p.phonetic ? `<div class="meta-line"><strong>Pronunciation hint:</strong> ${escapeHtml(p.phonetic)}</div>` : ""}
+          ${p.tone ? `<div class="tone-alert"><strong>Tone / Pitch note:</strong> ${escapeHtml(p.tone)}</div>` : ""}
+          ${p.clinical ? `<div class="clinical-note"><strong>Clinical / Context note:</strong> ${escapeHtml(p.clinical)}</div>` : ""}
+          <div class="card-actions">
+            <button type="button" class="btn btn-sm btn-ghost" data-suggest-edit="${escapeHtml(p.id)}">Suggest Edit / Audio Target</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    listEl.querySelectorAll("[data-play-url]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const url = btn.getAttribute("data-play-url");
+        if (activeAudioEl) {
+          activeAudioEl.pause();
+        }
+        activeAudioEl = new Audio(url);
+        activeAudioEl.play().catch((e) => setStatusBanner("Could not play audio: " + e.message, "warn"));
+      });
+    });
+
+    listEl.querySelectorAll("[data-suggest-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-suggest-edit");
+        const target = phrases.find((x) => x.id === id);
+        if (!target) return;
+        switchTab("contributeTab");
+        $("subType").value = "edit_phrase";
+        $("subTargetId").value = target.id;
+        $("subSection").value = target.section;
+        $("subSubsection").value = target.subsection || "";
+        $("subEnglish").value = target.english;
+        $("subIdoma").value = target.idoma || "";
+        $("subSyllables").value = target.syllables || "";
+        $("subPhonetic").value = target.phonetic || "";
+        $("subTone").value = target.tone || "";
+        $("subClinical").value = target.clinical || "";
+        $("audioPhraseSelect").value = target.id;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+  }
+
+  function renderPracticeCard() {
+    const cardEl = $("practiceCard");
+    if (!cardEl) return;
+    const pool = phrases.filter((p) => p.idoma && p.status !== "missing");
+    if (pool.length === 0) {
+      cardEl.innerHTML = "<p>No translated phrases available for practice yet.</p>";
+      return;
+    }
+    const item = pool[practiceIndex % pool.length];
+    const clip = audioMap[item.id];
+
+    cardEl.innerHTML = `
+      <div class="practice-meta">
+        <span>Card ${(practiceIndex % pool.length) + 1} of ${pool.length}</span>
+        <span>Streak: <strong>${practiceStreak}</strong></span>
+      </div>
+      <div class="sec-tag">${escapeHtml(item.section)}</div>
+      <h3 class="english-term">${escapeHtml(item.english)}</h3>
+      <p class="muted">Say or recall the Idoma phrase and pitch contour first, then reveal to check.</p>
+      ${practiceRevealed ? `
+        <div class="reveal-box">
+          <div class="idoma-term">${escapeHtml(item.idoma)}</div>
+          ${item.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(item.syllables)}</code></div>` : ""}
+          ${item.tone ? `<div class="tone-alert">${escapeHtml(item.tone)}</div>` : ""}
+          ${item.clinical ? `<div class="clinical-note">${escapeHtml(item.clinical)}</div>` : ""}
+          ${clip && clip.url ? `<button type="button" class="btn btn-sm btn-secondary" id="practicePlayAudio">Play Approved Audio</button>` : ""}
+        </div>
+        <div class="practice-buttons">
+          <button type="button" class="btn btn-primary" id="markRecalledBtn">Recalled Well (+1 Streak)</button>
+          <button type="button" class="btn btn-secondary" id="needsReviewBtn">Needs More Practice</button>
+        </div>
+      ` : `
+        <button type="button" class="btn btn-primary" id="revealAnswerBtn">Reveal Answer</button>
+      `}
+    `;
+
+    $("revealAnswerBtn")?.addEventListener("click", () => {
+      practiceRevealed = true;
+      renderPracticeCard();
+    });
+    $("practicePlayAudio")?.addEventListener("click", () => {
+      if (clip && clip.url) new Audio(clip.url).play().catch(() => {});
+    });
+    $("markRecalledBtn")?.addEventListener("click", () => {
+      practiceStreak += 1;
+      practiceIndex += 1;
+      practiceRevealed = false;
+      renderPracticeCard();
+    });
+    $("needsReviewBtn")?.addEventListener("click", () => {
+      practiceStreak = 0;
+      practiceIndex += 1;
+      practiceRevealed = false;
+      renderPracticeCard();
+    });
+  }
+
+  function renderCredits() {
+    const el = $("creditsGrid");
+    if (!el) return;
+    if (!credits || credits.length === 0) {
+      el.innerHTML = "<p class='muted'>No public credits listed yet.</p>";
+      return;
+    }
+    el.innerHTML = credits.map((c) => `
+      <div class="credit-card">
+        <strong>${escapeHtml(c.full_name)}</strong>
+        <span class="role-pill">${escapeHtml(c.role_title)}</span>
+        ${c.notes ? `<p class="muted small-note">${escapeHtml(c.notes)}</p>` : ""}
+      </div>
+    `).join("");
+  }
+
+  function populateAudioPhraseSelect() {
+    const sel = $("audioPhraseSelect");
+    if (!sel) return;
+    sel.innerHTML = phrases
+      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : " [Blank]"}</option>`)
+      .join("");
+  }
+
+  async function renderAdminDashboard() {
+    const container = $("adminContent");
     if (!container) return;
+    if (!session || !session.is_admin) {
+      container.innerHTML = "<p class='muted'>Sign in with an Admin access code to manage contributors, submissions, and audio clips.</p>";
+      return;
+    }
 
-    container.innerHTML = `
-        <div class="border border-slate-200 rounded-xl overflow-hidden">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                    <tr><th class="p-2.5">Name</th><th class="p-2.5">Contribution</th></tr>
+    container.innerHTML = "<p class='muted'>Loading moderation queues...</p>";
+    try {
+      const data = await DB.adminGetData(session);
+      const pendingSubs = data.submissions.filter((s) => s.review_status === "pending");
+      const pendingAudio = data.audioClips.filter((a) => a.approval_status === "pending");
+
+      container.innerHTML = `
+        <div class="admin-grid">
+          <section class="panel">
+            <h3>1. Contributors, Access Codes & Credits</h3>
+            <form id="contribForm" class="stack-form">
+              <input type="hidden" id="cId" />
+              <div class="two-col">
+                <label>Full Name <input type="text" id="cName" required placeholder="e.g. Grace Adini" /></label>
+                <label>Role Title <input type="text" id="cRole" required placeholder="e.g. Translation" /></label>
+              </div>
+              <div class="two-col">
+                <label>Access Code <input type="text" id="cCode" required placeholder="e.g. CONT-NEW-02" /></label>
+                <label>Notes <input type="text" id="cNotes" placeholder="Dialect / specialty notes" /></label>
+              </div>
+              <div class="two-col">
+                <label>Daily Phrase Limit <input type="number" id="cSubLimit" value="40" min="1" max="500" /></label>
+                <label>Daily Audio Limit <input type="number" id="cAudLimit" value="40" min="1" max="500" /></label>
+              </div>
+              <div class="checkbox-row">
+                <label><input type="checkbox" id="cIsAdmin" /> Admin Role</label>
+                <label><input type="checkbox" id="cShowCredits" checked /> Show in Credits</label>
+                <label><input type="checkbox" id="cIsActive" checked /> Active</label>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn btn-primary">Save Contributor</button>
+                <button type="button" class="btn btn-ghost" id="cResetBtn">Clear Form</button>
+              </div>
+            </form>
+
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Name</th><th>Role</th><th>Code</th><th>Limits</th><th>Credits</th><th>Actions</th></tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-slate-700">
-                    ${contributors.map(c => `<tr><td class="p-2.5 font-medium">${c.full_name}</td><td class="p-2.5">${c.role_title}</td></tr>`).join('')}
+                <tbody>
+                  ${data.contributors.map((c) => `
+                    <tr>
+                      <td><strong>${escapeHtml(c.full_name)}</strong>${c.is_admin ? " <span class='badge badge-verified'>Admin</span>" : ""}</td>
+                      <td>${escapeHtml(c.role_title)}</td>
+                      <td><code>${escapeHtml(c.access_code)}</code></td>
+                      <td>${c.daily_submission_limit}p / ${c.daily_audio_limit}a</td>
+                      <td>${c.show_in_credits ? "Yes" : "No"}</td>
+                      <td>
+                        <button type="button" class="btn btn-sm btn-ghost" data-edit-c="${escapeHtml(c.id)}">Edit</button>
+                        <button type="button" class="btn btn-sm btn-danger" data-del-c="${escapeHtml(c.id)}">Remove</button>
+                      </td>
+                    </tr>
+                  `).join("")}
                 </tbody>
-            </table>
-        </div>
-    `;
-}
+              </table>
+            </div>
+          </section>
 
-function switchTab(tabId) {
-    currentTab = tabId;
-    ['finder', 'listen', 'tray', 'practice', 'studio', 'admin'].forEach(t => {
-        const view = document.getElementById(`view-${t}`);
-        const nav = document.getElementById(`nav-${t}`);
-        if (view) view.classList.toggle('hidden', t !== tabId);
-        if (nav) {
-            if (t === tabId) {
-                nav.className = "px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-semibold transition-all shadow-sm";
-            } else {
-                nav.className = "px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all text-emerald-200";
-            }
+          <section class="panel">
+            <h3>2. Pending Phrase Edits & Term Requests (${pendingSubs.length})</h3>
+            ${pendingSubs.length === 0 ? "<p class='muted'>No pending phrase submissions.</p>" : pendingSubs.map((s) => `
+              <div class="mod-item">
+                <div class="card-top">
+                  <span class="sec-tag">${escapeHtml(s.submission_type)} · ${escapeHtml(s.section)}</span>
+                  <span class="muted small-note">By ${escapeHtml(s.requester_label || "User")}</span>
+                </div>
+                <strong>English:</strong> ${escapeHtml(s.english_term)}<br/>
+                ${s.idoma_term ? `<strong>Proposed Idoma:</strong> ${escapeHtml(s.idoma_term)}<br/>` : ""}
+                ${s.syllables ? `<strong>Syllables:</strong> <code>${escapeHtml(s.syllables)}</code><br/>` : ""}
+                ${s.tone_note ? `<strong>Tone note:</strong> ${escapeHtml(s.tone_note)}<br/>` : ""}
+                ${s.clinical_note ? `<strong>Notes:</strong> ${escapeHtml(s.clinical_note)}<br/>` : ""}
+                <div class="btn-row">
+                  <button type="button" class="btn btn-sm btn-primary" data-sub-action="approved" data-sub-id="${escapeHtml(s.id)}">Approve & Publish</button>
+                  <button type="button" class="btn btn-sm btn-danger" data-sub-action="rejected" data-sub-id="${escapeHtml(s.id)}">Reject</button>
+                </div>
+              </div>
+            `).join("")}
+
+            <h3 class="mt-lg">3. Pending Audio Clips (${pendingAudio.length})</h3>
+            ${pendingAudio.length === 0 ? "<p class='muted'>No pending voice clips.</p>" : pendingAudio.map((a) => {
+              const phrase = phrases.find((p) => p.id === a.phrase_id);
+              let src = a.data_url || "";
+              if (!src && DB.isLive() && window.APP_CONFIG?.SUPABASE_URL) {
+                const bucket = window.APP_CONFIG.AUDIO_BUCKET || "idoma-audio";
+                src = `${window.APP_CONFIG.SUPABASE_URL}/storage/v1/object/public/${bucket}/${a.storage_path}`;
+              }
+              return `
+                <div class="mod-item">
+                  <strong>Phrase:</strong> ${escapeHtml(phrase ? phrase.english : a.phrase_id)}<br/>
+                  ${a.dialect_note ? `<strong>Dialect note:</strong> ${escapeHtml(a.dialect_note)}<br/>` : ""}
+                  ${src ? `<audio controls src="${escapeHtml(src)}" class="audio-player"></audio>` : ""}
+                  <div class="btn-row">
+                    <button type="button" class="btn btn-sm btn-primary" data-aud-action="approved" data-aud-id="${escapeHtml(a.id)}">Approve Live Audio</button>
+                    <button type="button" class="btn btn-sm btn-danger" data-aud-action="rejected" data-aud-id="${escapeHtml(a.id)}">Reject</button>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </section>
+        </div>
+      `;
+
+      // Bind contributor form
+      $("contribForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          await DB.adminUpsertContributor(session, {
+            id: $("cId").value || null,
+            full_name: $("cName").value.trim(),
+            role_title: $("cRole").value.trim(),
+            access_code: $("cCode").value.trim(),
+            is_admin: $("cIsAdmin").checked,
+            show_in_credits: $("cShowCredits").checked,
+            is_active: $("cIsActive").checked,
+            daily_submission_limit: Number($("cSubLimit").value) || 40,
+            daily_audio_limit: Number($("cAudLimit").value) || 40,
+            notes: $("cNotes").value.trim()
+          });
+          credits = await DB.fetchPublicCredits();
+          renderCredits();
+          setStatusBanner("Contributor saved and credits updated.", "success");
+          await renderAdminDashboard();
+        } catch (err) {
+          setStatusBanner(err.message, "warn");
         }
+      });
+
+      $("cResetBtn")?.addEventListener("click", () => {
+        $("cId").value = "";
+        $("contribForm")?.reset();
+      });
+
+      container.querySelectorAll("[data-edit-c]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const found = data.contributors.find((x) => x.id === btn.getAttribute("data-edit-c"));
+          if (!found) return;
+          $("cId").value = found.id;
+          $("cName").value = found.full_name || "";
+          $("cRole").value = found.role_title || "";
+          $("cCode").value = found.access_code || "";
+          $("cNotes").value = found.notes || "";
+          $("cSubLimit").value = found.daily_submission_limit || 40;
+          $("cAudLimit").value = found.daily_audio_limit || 40;
+          $("cIsAdmin").checked = Boolean(found.is_admin);
+          $("cShowCredits").checked = found.show_in_credits !== false;
+          $("cIsActive").checked = found.is_active !== false;
+        });
+      });
+
+      container.querySelectorAll("[data-del-c]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            await DB.adminDeleteContributor(session, btn.getAttribute("data-del-c"));
+            credits = await DB.fetchPublicCredits();
+            renderCredits();
+            setStatusBanner("Contributor removed.", "info");
+            await renderAdminDashboard();
+          } catch (err) {
+            setStatusBanner(err.message, "warn");
+          }
+        });
+      });
+
+      container.querySelectorAll("[data-sub-action]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            await DB.adminReviewSubmission(session, btn.getAttribute("data-sub-id"), btn.getAttribute("data-sub-action"), "", seedPhrases);
+            const refreshed = await DB.fetchPhrases(seedPhrases);
+            phrases = refreshed.phrases;
+            populateSectionFilter();
+            populateAudioPhraseSelect();
+            renderPhrases();
+            renderPracticeCard();
+            setStatusBanner("Submission moderation completed.", "success");
+            await renderAdminDashboard();
+          } catch (err) {
+            setStatusBanner(err.message, "warn");
+          }
+        });
+      });
+
+      container.querySelectorAll("[data-aud-action]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            await DB.adminReviewAudioClip(session, btn.getAttribute("data-aud-id"), btn.getAttribute("data-aud-action"), true, "");
+            audioMap = await DB.fetchApprovedAudioMap();
+            renderPhrases();
+            setStatusBanner("Audio clip moderation updated.", "success");
+            await renderAdminDashboard();
+          } catch (err) {
+            setStatusBanner(err.message, "warn");
+          }
+        });
+      });
+    } catch (err) {
+      container.innerHTML = `<p class="notice-banner notice-warn">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function switchTab(tabId) {
+    document.querySelectorAll(".tab-btn").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-tab") === tabId);
+    });
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.hidden = panel.id !== tabId;
+    });
+    if (tabId === "practiceTab") renderPracticeCard();
+    if (tabId === "adminTab") renderAdminDashboard();
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function bindEvents() {
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
     });
 
-    if (tabId === 'tray') renderTrayCards();
-    if (tabId === 'practice') showCurrentDrillCard();
-}
-
-function renderCategoryPills() {
-    const categories = ['All', ...new Set(phrases.map(p => p.category))];
-    const container = document.getElementById('category-pills');
-    container.innerHTML = categories.map(cat => `
-        <button onclick="selectCategory('${cat}')" 
-            class="px-3 py-1.5 rounded-xl border text-xs whitespace-nowrap transition-all font-medium ${currentCategory === cat ? 'bg-emerald-700 text-white border-emerald-700 shadow-sm' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'}">
-            ${cat}
-        </button>
-    `).join('');
-}
-
-function selectCategory(cat) {
-    currentCategory = cat;
-    renderCategoryPills();
-    renderPhrases();
-}
-
-function selectStatusFilter(status) {
-    currentStatusFilter = status;
-    renderPhrases();
-}
-
-function handleSearch() {
-    const input = document.getElementById('search-input');
-    currentSearchQuery = input.value.trim().toLowerCase();
-    document.getElementById('search-clear-btn').classList.toggle('hidden', currentSearchQuery === '');
-    renderPhrases();
-}
-
-function clearSearch() {
-    document.getElementById('search-input').value = '';
-    currentSearchQuery = '';
-    document.getElementById('search-clear-btn').classList.add('hidden');
-    renderPhrases();
-}
-
-function renderPhrases() {
-    const container = document.getElementById('phrase-cards-container');
-    const fallbackNotice = document.getElementById('smart-fallback-notice');
-
-    let filtered = phrases.filter(p => {
-        const matchesCat = currentCategory === 'All' || p.category === currentCategory;
-        const matchesSearch = currentSearchQuery === '' || 
-            p.english.toLowerCase().includes(currentSearchQuery) || 
-            (p.idoma && p.idoma.toLowerCase().includes(currentSearchQuery)) ||
-            (p.syllables && p.syllables.toLowerCase().includes(currentSearchQuery));
-        
-        let matchesStatus = true;
-        if (currentStatusFilter === 'verified') matchesStatus = p.verificationStatus === 'verified';
-        if (currentStatusFilter === 'unconfirmed') matchesStatus = p.verificationStatus === 'unconfirmed' || (p.idoma && p.idoma.includes('?'));
-        if (currentStatusFilter === 'missing') matchesStatus = p.verificationStatus === 'missing' || !p.idoma;
-
-        return matchesCat && matchesSearch && matchesStatus;
+    $("searchInput")?.addEventListener("input", renderPhrases);
+    $("sectionFilter")?.addEventListener("change", (e) => {
+      activeSection = e.target.value;
+      renderPhrases();
+    });
+    $("statusFilter")?.addEventListener("change", (e) => {
+      activeStatus = e.target.value;
+      renderPhrases();
     });
 
-    document.getElementById('results-count').innerText = filtered.length;
+    $("bedsideToggleBtn")?.addEventListener("click", () => {
+      bedsideMode = !bedsideMode;
+      $("bedsideToggleBtn").textContent = bedsideMode ? "Exit Bedside Mode" : "Bedside High-Contrast Mode";
+      document.body.classList.toggle("bedside-active", bedsideMode);
+      renderPhrases();
+    });
 
-    if (filtered.length === 0 && currentSearchQuery !== '') {
-        fallbackNotice.classList.remove('hidden');
-        document.getElementById('fallback-query-text').innerText = currentSearchQuery;
-        document.getElementById('fallback-btn-text').innerText = currentSearchQuery;
-    } else {
-        fallbackNotice.classList.add('hidden');
-    }
+    // Access code login
+    $("loginForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        session = await DB.loginWithCode($("accessCodeInput").value);
+        $("accessCodeInput").value = "";
+        renderSessionBadge();
+        setStatusBanner(`Welcome, ${session.full_name}.`, "success");
+        if (session.is_admin) await renderAdminDashboard();
+      } catch (err) {
+        setStatusBanner(err.message, "warn");
+      }
+    });
 
-    container.innerHTML = filtered.map(p => createPhraseCardHTML(p)).join('');
-}
+    $("logoutBtn")?.addEventListener("click", () => {
+      DB.clearSavedSession();
+      session = null;
+      renderSessionBadge();
+      switchTab("finderTab");
+      setStatusBanner("Signed out.", "info");
+    });
 
-function createPhraseCardHTML(p) {
-    const isBookmarked = bedsideTray.has(p.id);
-    const hasAudio = !!audioRecordings[p.id];
+    // Contributor submission / public term request
+    $("phraseSubForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const englishVal = $("subEnglish").value.trim();
+        if (!englishVal) throw new Error("English term or question is required.");
 
-    let badgeHTML = p.verificationStatus === 'verified' ?
-        `<span class="bg-emerald-100 text-emerald-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">Verified</span>` :
-        `<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">Unconfirmed</span>`;
+        const subType = session ? $("subType").value : "term_request";
+        await DB.submitPhraseOrRequest({
+          submission_type: subType,
+          target_phrase_id: subType === "edit_phrase" ? ($("subTargetId").value || null) : null,
+          variation_of_id: $("subVariationOf").value || null,
+          allow_variation: $("subAllowVar").checked,
+          section: $("subSection").value,
+          subsection: $("subSubsection").value.trim(),
+          english_term: englishVal,
+          idoma_term: $("subIdoma").value.trim(),
+          syllables: $("subSyllables").value.trim(),
+          phonetic_hint: $("subPhonetic").value.trim(),
+          tone_note: $("subTone").value.trim(),
+          clinical_note: $("subClinical").value.trim(),
+          proposed_status: $("subStatus").value,
+          requester_label: $("subRequester")?.value.trim() || "Public user"
+        }, session);
 
-    return `
-        <div class="card-bg bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between">
-            <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs">
-                    <span class="text-slate-400 font-medium text-muted">${p.category}</span>
-                    ${badgeHTML}
-                </div>
-                <div>
-                    <h3 class="text-sm font-bold text-slate-800 leading-snug">${p.english}</h3>
-                    <p class="idoma-text text-lg font-extrabold text-emerald-700 mt-1">${p.idoma || '[Pending]'}</p>
-                    ${p.syllables ? `<p class="text-xs text-emerald-800 font-mono mt-0.5">${p.syllables}</p>` : ''}
-                </div>
-                ${p.toneNote ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2 text-xs text-amber-900"><strong>Tone:</strong> ${p.toneNote}</div>` : ''}
+        $("phraseSubForm").reset();
+        $("subTargetId").value = "";
+        setStatusBanner(
+          session
+            ? "Submitted to the moderation queue for Admin approval."
+            : "Term request submitted! An admin/contributor can review it in the queue.",
+          "success"
+        );
+        if (session && session.is_admin) await renderAdminDashboard();
+      } catch (err) {
+        setStatusBanner(err.message, "warn");
+      }
+    });
+
+    // Audio recording & upload
+    $("recordToggleBtn")?.addEventListener("click", async () => {
+      try {
+        if (!isRecording) {
+          recordedDraft = null;
+          $("saveAudioBtn").disabled = true;
+          await Matcher.startRecording();
+          isRecording = true;
+          $("recordToggleBtn").textContent = "Stop Recording";
+          $("recordStateText").textContent = "Recording... speak clearly and verify pitch aloud.";
+        } else {
+          recordedDraft = await Matcher.stopRecording();
+          isRecording = false;
+          $("recordToggleBtn").textContent = "Record Pronunciation";
+          const url = URL.createObjectURL(recordedDraft.blob);
+          $("audioPreview").src = url;
+          $("audioPreview").hidden = false;
+          $("saveAudioBtn").disabled = false;
+          $("recordStateText").textContent = `Recorded (${Math.round(recordedDraft.durationMs / 1000)}s). Preview and submit for approval.`;
+        }
+      } catch (err) {
+        isRecording = false;
+        $("recordToggleBtn").textContent = "Record Pronunciation";
+        setStatusBanner(err.message, "warn");
+      }
+    });
+
+    $("saveAudioBtn")?.addEventListener("click", async () => {
+      try {
+        if (!recordedDraft) throw new Error("Record a voice clip first.");
+        await DB.uploadAudioRecording({
+          phraseId: $("audioPhraseSelect").value,
+          blob: recordedDraft.blob,
+          mimeType: recordedDraft.mimeType,
+          durationMs: recordedDraft.durationMs,
+          dialectNote: $("audioDialectNote").value.trim()
+        }, session);
+        recordedDraft = null;
+        $("saveAudioBtn").disabled = true;
+        $("audioPreview").hidden = true;
+        $("audioDialectNote").value = "";
+        $("recordStateText").textContent = "Submitted! Audio will go live once approved by Admin.";
+        setStatusBanner("Voice clip submitted for admin review.", "success");
+        if (session && session.is_admin) await renderAdminDashboard();
+      } catch (err) {
+        setStatusBanner(err.message, "warn");
+      }
+    });
+
+    // Listen Mode: Best-Match check + Guided Response Cards
+    $("listenRecordBtn")?.addEventListener("click", async () => {
+      try {
+        if (!isRecording) {
+          await Matcher.startRecording();
+          isRecording = true;
+          $("listenRecordBtn").textContent = "Stop & Check Best Matches";
+          $("listenStatus").textContent = "Listening to short patient response...";
+        } else {
+          const rec = await Matcher.stopRecording();
+          isRecording = false;
+          $("listenRecordBtn").textContent = "Listen for Best Match";
+          $("listenStatus").textContent = "Comparing against known phrase patterns (unverified acoustic match — confirm with patient):";
+          const matches = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+          $("listenMatches").innerHTML = matches.map((m) => `
+            <div class="match-card">
+              <div>
+                <strong>${escapeHtml(m.phrase.english)}</strong> — <span class="idoma-term">${escapeHtml(m.phrase.idoma)}</span>
+                <div class="muted small-note">Candidate match score: ${m.confidence}% · Confirm directly with patient</div>
+              </div>
+              ${m.hasAudio ? `<button type="button" class="btn btn-sm btn-secondary" data-match-play="${escapeHtml(audioMap[m.phrase.id].url)}">Hear Reference</button>` : ""}
             </div>
+          `).join("");
+          $("listenMatches").querySelectorAll("[data-match-play]").forEach((b) => {
+            b.addEventListener("click", () => new Audio(b.getAttribute("data-match-play")).play().catch(() => {}));
+          });
+        }
+      } catch (err) {
+        isRecording = false;
+        $("listenRecordBtn").textContent = "Listen for Best Match";
+        setStatusBanner(err.message, "warn");
+      }
+    });
 
-            <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                <button onclick="playPronunciation(${p.id})" class="text-sky-600 font-semibold flex items-center gap-1.5 bg-sky-50 px-3 py-1.5 rounded-xl">
-                    <i class="fa-solid fa-volume-high"></i> Audio Cue
-                </button>
-                <button onclick="toggleBookmark(${p.id})" class="p-2 rounded-xl border ${isBookmarked ? 'bg-amber-100 text-amber-800' : 'border-slate-200 text-slate-400'}">
-                    <i class="${isBookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark"></i>
-                </button>
-            </div>
-        </div>
-    `;
-}
+    document.querySelectorAll("[data-response-chip]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const val = chip.getAttribute("data-response-chip");
+        const log = $("responseLog");
+        if (log) {
+          const entry = document.createElement("li");
+          entry.textContent = `${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — Confirmed response: ${val}`;
+          log.prepend(entry);
+        }
+      });
+    });
+  }
 
-function toggleBookmark(id) {
-    if (bedsideTray.has(id)) bedsideTray.delete(id);
-    else bedsideTray.add(id);
-    document.getElementById('tray-count-badge').innerText = bedsideTray.size;
+  async function init() {
+    bindEvents();
+    DB.initClient();
+    session = DB.getSavedSession();
+    renderSessionBadge();
+
+    seedPhrases = await DB.loadSeedPhrases();
+    const fetched = await DB.fetchPhrases(seedPhrases);
+    phrases = fetched.phrases;
+    audioMap = await DB.fetchApprovedAudioMap();
+    credits = await DB.fetchPublicCredits();
+
+    populateSectionFilter();
+    populateAudioPhraseSelect();
     renderPhrases();
-}
+    renderPracticeCard();
+    renderCredits();
 
-function clearTray() {
-    bedsideTray.clear();
-    document.getElementById('tray-count-badge').innerText = 0;
-    renderTrayCards();
-}
-
-function renderTrayCards() {
-    const container = document.getElementById('tray-cards-container');
-    const emptyState = document.getElementById('tray-empty-state');
-    const pinnedList = phrases.filter(p => bedsideTray.has(p.id));
-
-    if (pinnedList.length === 0) {
-        container.innerHTML = '';
-        emptyState.classList.remove('hidden');
+    if (DB.isLive()) {
+      setStatusBanner(`Connected to Supabase (${phrases.length} entries loaded).`, "success");
     } else {
-        emptyState.classList.add('hidden');
-        container.innerHTML = pinnedList.map(p => createPhraseCardHTML(p)).join('');
+      setStatusBanner(`Offline / Local mode (${phrases.length} entries loaded from seed/local storage). Add Supabase URL & anon key in js/config.js when ready.`, "info");
     }
-}
+  }
 
-// Drills Active Recall
-function initDrillSession() {
-    drillQueue = phrases.filter(p => p.idoma && p.idoma.trim() !== '');
-    drillIndex = 0;
-}
-
-function showCurrentDrillCard() {
-    if (!drillQueue || drillQueue.length === 0) return;
-    const current = drillQueue[drillIndex % drillQueue.length];
-
-    document.getElementById('drill-category').innerText = current.category;
-    document.getElementById('drill-progress').innerText = `Card ${(drillIndex % drillQueue.length) + 1} / ${drillQueue.length}`;
-    document.getElementById('drill-prompt-english').innerText = current.english;
-    document.getElementById('drill-answer-idoma').innerText = current.idoma;
-    document.getElementById('drill-answer-syllables').innerText = current.syllables ? `Syllables: ${current.syllables}` : '';
-    
-    document.getElementById('drill-answer-box').classList.add('hidden');
-    document.getElementById('drill-actions-reveal').classList.remove('hidden');
-    document.getElementById('drill-actions-grade').classList.add('hidden');
-}
-
-function revealDrillAnswer() {
-    document.getElementById('drill-answer-box').classList.remove('hidden');
-    document.getElementById('drill-actions-reveal').classList.add('hidden');
-    document.getElementById('drill-actions-grade').classList.remove('hidden');
-}
-
-function gradeDrill(success) {
-    if (success) drillStreak++;
-    else drillStreak = 0;
-    document.getElementById('drill-streak').innerText = drillStreak;
-    drillIndex++;
-    showCurrentDrillCard();
-}
-
-// Studio & Data Export
-function populateStudioDropdown() {
-    const select = document.getElementById('studio-phrase-select');
-    select.innerHTML = phrases.map(p => `<option value="${p.id}">${p.english} (${p.idoma || 'Pending'})</option>`).join('');
-    loadSelectedPhraseToEditor();
-}
-
-function loadSelectedPhraseToEditor() {
-    const id = parseInt(document.getElementById('studio-phrase-select').value);
-    const p = phrases.find(item => item.id === id);
-    if (!p) return;
-    document.getElementById('edit-field-idoma').value = p.idoma || '';
-    document.getElementById('edit-field-syllables').value = p.syllables || '';
-    document.getElementById('edit-field-status').value = p.verificationStatus || 'verified';
-    document.getElementById('edit-field-tonenote').value = p.toneNote || '';
-}
-
-function saveEntryEdits() {
-    const id = parseInt(document.getElementById('studio-phrase-select').value);
-    const p = phrases.find(item => item.id === id);
-    if (!p) return;
-
-    p.idoma = document.getElementById('edit-field-idoma').value.trim();
-    p.syllables = document.getElementById('edit-field-syllables').value.trim();
-    p.verificationStatus = document.getElementById('edit-field-status').value;
-    p.toneNote = document.getElementById('edit-field-tonenote').value.trim();
-
-    localStorage.setItem(LOCAL_STORAGE_KEY_PHRASES, JSON.stringify(phrases));
-    renderPhrases();
-    showToast("Edits Saved", `Updated entry for ${p.english}`);
-}
-
-function exportPhrasebookJSON() {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(phrases, null, 2));
-    const dlAnchorElem = document.createElement('a');
-    dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", `idoma_phrasebook_${new Date().toISOString().substring(0,10)}.json`);
-    dlAnchorElem.click();
-}
-
-function playPronunciation(id) {
-    const p = phrases.find(item => item.id === id);
-    if (!p) return;
-    if ('speechSynthesis' in window && p.idoma) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(p.idoma);
-        u.rate = 0.85;
-        window.speechSynthesis.speak(u);
-    }
-    showToast(`Audio Cue: ${p.english}`, `${p.idoma || 'Pending'} (${p.notes || 'Verify tone aloud'})`);
-}
-
-function setUserRole(role) {
-    currentUserRole = role;
-    showToast("Role Updated", `Active view: ${role.toUpperCase()}`);
-}
-
-function generateContributorCode() {
-    const name = document.getElementById('new-contributor-name').value.trim();
-    const role = document.getElementById('new-contributor-role').value;
-    if (!name) return;
-    const code = `FUHSO-${name.split(' ')[0].toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    registeredContributors.push({ full_name: name, role_title: role, access_code: code });
-    renderContributorsList();
-    renderDynamicCredits();
-    showToast("Access Code Registered", `${name}: ${code}`);
-}
-
-function renderContributorsList() {
-    const container = document.getElementById('contributors-list-box');
-    container.innerHTML = registeredContributors.map(c => `
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white border">
-            <div><span class="font-bold text-slate-800">${c.full_name}</span> <span class="text-[10px] text-slate-400 font-normal">(${c.role_title})</span></div>
-            <span class="font-mono text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200">${c.access_code}</span>
-        </div>
-    `).join('');
-}
-
-function runDuplicateCheck() {
-    const query = document.getElementById('check-duplicate-term').value.trim().toLowerCase();
-    const resBox = document.getElementById('duplicate-check-result');
-    if (!query) return;
-
-    const matches = phrases.filter(p => p.english.toLowerCase().includes(query));
-    resBox.classList.remove('hidden');
-    if (matches.length > 0) {
-        resBox.className = "text-xs p-3 rounded-xl border bg-amber-50 border-amber-200 text-amber-900";
-        resBox.innerHTML = `<strong>Found ${matches.length} Existing Match(es):</strong> ${matches.map(m => m.english).join(', ')}`;
-    } else {
-        resBox.className = "text-xs p-3 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-900 font-bold";
-        resBox.innerText = "✓ No duplicates found. Safe for insertion!";
-    }
-}
-
-function toggleBedsideFocus() {
-    isBedsideFocus = !isBedsideFocus;
-    document.body.classList.toggle('bedside-focus', isBedsideFocus);
-}
-
-function showToast(title, text) {
-    const toast = document.getElementById('toast-audio');
-    document.getElementById('toast-phrase-title').innerText = title;
-    document.getElementById('toast-phrase-text').innerText = text;
-    toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), 3500);
-}
-
-function openCreditsModal() { document.getElementById('modal-credits').classList.remove('hidden'); }
-function closeCreditsModal() { document.getElementById('modal-credits').classList.add('hidden'); }
-function openRequestModal(term = '') {
-    document.getElementById('modal-request').classList.remove('hidden');
-    if (term) document.getElementById('request-input-term').value = term;
-}
-function closeRequestModal() { document.getElementById('modal-request').classList.add('hidden'); }
-function dismissDisclaimer() { document.getElementById('disclaimer-banner').classList.add('hidden'); }
-
-async function submitTermRequest(e) {
-    e.preventDefault();
-    const term = document.getElementById('request-input-term').value;
-    const cat = document.getElementById('request-input-category').value;
-    const note = document.getElementById('request-input-note').value;
-
-    await dbSubmitTermRequest(term, cat, note);
-    closeRequestModal();
-    showToast("Term Requested", `'${term}' submitted to review queue.`);
-}
+  document.addEventListener("DOMContentLoaded", init);
+})();
