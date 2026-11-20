@@ -23,15 +23,28 @@
   let recordedDraft = null;
   let isRecording = false;
   let activeAudioEl = null;
+  let noticeTimer = null;
 
   const $ = (id) => document.getElementById(id);
 
   function setStatusBanner(msg, type = "info") {
     const el = $("systemNotice");
     if (!el) return;
+    if (noticeTimer) clearTimeout(noticeTimer);
+
     el.hidden = false;
-    el.textContent = msg;
     el.className = `notice-banner notice-${type}`;
+    el.innerHTML = `
+      <span>${escapeHtml(msg)}</span>
+      <button type="button" class="notice-close-btn" aria-label="Dismiss notification">&times;</button>
+    `;
+    el.querySelector(".notice-close-btn")?.addEventListener("click", () => {
+      el.hidden = true;
+    });
+
+    noticeTimer = setTimeout(() => {
+      el.hidden = true;
+    }, 5500);
   }
 
   function renderSessionUI() {
