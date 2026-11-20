@@ -1,297 +1,362 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Idoma Medical Phrasebook · FUHSO Clinical Communication Tool</title>
+  <title>Idoma Medical Clinical Phrasebook | Bedside Communication Companion</title>
+  <meta name="description" content="Clinical English-to-Idoma & Alala (Orokam) medical phrasebook with tone warnings, syllable breakdowns, approved audio pronunciation, and bedside communication tools." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Crect x='13.75' y='6.5' width='4.5' height='19' rx='1.5' fill='white'/%3E%3Crect x='6.5' y='13.75' width='19' height='4.5' rx='1.5' fill='white'/%3E%3Cpath d='M23.5 9.2A9.5 9.5 0 0 1 26.2 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M8.5 22.8A9.5 9.5 0 0 1 5.8 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <!-- Collapsible Tonal & Clinical Safety Banner -->
-  <div id="disclaimerBar" class="disclaimer-strip">
-    <div class="container disclaimer-inner">
+  <!-- Clinical Safety Disclaimer -->
+  <div id="disclaimerBar" class="disclaimer-bar" role="region" aria-label="Clinical Disclaimer">
+    <div class="disclaimer-inner">
       <p>
-        <span class="pill-warn">Clinical &amp; Tonal Note</span>
-        <strong>Idoma is tonal</strong>—pitch patterns can change meaning. Always verify terms aloud with a native speaker, especially entries marked <em>Unconfirmed</em>.
+        <strong>Clinical &amp; Linguistic Notice:</strong> Idoma is a tonal language; written spellings alone cannot convey pitch. Entries marked <code>(?)</code> are unconfirmed and require native speaker verification. Do not rely on unverified text or audio matching for critical consent or high-risk clinical decisions without a human interpreter.
       </p>
-      <button type="button" id="dismissDisclaimerBtn" class="btn-link">Dismiss</button>
+      <button id="dismissDisclaimerBtn" class="btn btn-sm btn-ghost" type="button">Acknowledge</button>
     </div>
   </div>
 
   <!-- Clean Clinical Header -->
-  <header class="site-header">
-    <div class="container header-inner">
+  <header class="app-header">
+    <div class="container header-grid">
       <div class="brand-block">
-        <div class="brand-emblem" aria-hidden="true">+</div>
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Clinical Cross -->
+            <rect x="13.75" y="6.5" width="4.5" height="19" rx="1.5" fill="currentColor" />
+            <rect x="6.5" y="13.75" width="19" height="4.5" rx="1.5" fill="currentColor" />
+            <!-- Dual Acoustic / Speech Waves -->
+            <path d="M23.5 9.2A9.5 9.5 0 0 1 26.2 16" stroke="#99f6e4" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M8.5 22.8A9.5 9.5 0 0 1 5.8 16" stroke="#99f6e4" stroke-width="2.2" stroke-linecap="round" />
+          </svg>
+        </div>
         <div>
-          <div class="brand-title-row">
-            <h1 class="site-title">Idoma Medical Phrasebook</h1>
-            <span class="version-pill">FUHSO Clinical</span>
-          </div>
-          <p class="subtitle">Department of Medicine &amp; Surgery · Federal University of Health Sciences, Otukpo</p>
+          <h1>Idoma Medical Clinical Phrasebook</h1>
+          <p class="subtitle">English ↔ Idoma &amp; Alala (Orokam) bedside history-taking, tone guide &amp; pronunciation</p>
         </div>
       </div>
 
-      <!-- Only visible when a contributor/admin is actively signed in, or when toggled from footer -->
-      <div class="auth-box" id="headerAuthBox" hidden>
+      <!-- Hidden by default for regular users; reveals only when Contributor Sign In is clicked or active -->
+      <div id="headerAuthBox" class="auth-box" hidden>
         <form id="loginForm" class="code-form" hidden>
-          <input type="password" id="accessCodeInput" placeholder="Enter contributor or admin code" autocomplete="off" />
+          <input
+            type="password"
+            id="accessCodeInput"
+            placeholder="Contributor access code"
+            aria-label="Contributor access code"
+            autocomplete="off"
+          />
           <button type="submit" class="btn btn-primary btn-sm">Sign In</button>
           <button type="button" id="cancelLoginBtn" class="btn btn-ghost btn-sm">Cancel</button>
         </form>
-        <div class="session-row" id="sessionRow" hidden>
+        <div id="sessionRow" class="session-row" hidden>
           <span id="sessionStatus" class="session-pill"></span>
           <button type="button" id="logoutBtn" class="btn btn-sm btn-ghost">Sign Out</button>
         </div>
       </div>
     </div>
-  </header>
 
-  <main class="container main-wrap">
-    <div id="systemNotice" class="notice-banner notice-info" hidden></div>
-
-    <!-- Primary Navigation -->
-    <nav class="tabs-nav" aria-label="Primary sections">
+    <!-- Navigation Tabs -->
+    <nav class="container nav-tabs" aria-label="Main Sections">
       <button type="button" class="tab-btn active" data-tab="finderTab">Phrase Finder</button>
-      <button type="button" class="tab-btn" data-tab="trayTab">
-        Bedside Tray <span id="trayCountBadge" class="count-badge">0</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="practiceTab">Practice Drills</button>
+      <button type="button" class="tab-btn" data-tab="trayTab">Bedside Tray <span id="trayCountBadge" class="count-pill">0</span></button>
+      <button type="button" class="tab-btn" data-tab="practiceTab">Pronunciation &amp; Recall</button>
       <button type="button" class="tab-btn" data-tab="listenTab">Listen &amp; Point</button>
       <button type="button" class="tab-btn" data-tab="contributeTab">Contribute / Request</button>
-      <button type="button" class="tab-btn" data-tab="aboutTab">About &amp; Credits</button>
-      <button type="button" class="tab-btn" data-tab="adminTab" hidden>Admin Studio</button>
+      <button type="button" class="tab-btn" data-tab="aboutTab">Guide &amp; Credits</button>
+      <button type="button" class="tab-btn admin-only-tab" data-tab="adminTab" hidden>Admin Studio</button>
     </nav>
+  </header>
 
-    <!-- 1. PHRASE FINDER -->
-    <section id="finderTab" class="tab-panel">
-      <div class="finder-toolbar panel">
-        <div class="controls-bar">
-          <input type="search" id="searchInput" placeholder="Search English, Idoma, Alala (Orokam), syllables, or symptoms..." />
-          <select id="statusFilter" aria-label="Filter by verification status">
-            <option value="ALL">All Statuses</option>
-            <option value="verified">Verified</option>
-            <option value="unconfirmed">Unconfirmed (?)</option>
-            <option value="missing">Missing / Pending</option>
-          </select>
-          <button type="button" id="alalaFilterBtn" class="btn btn-secondary">Alala (Orokam) Only</button>
-          <button type="button" id="bedsideToggleBtn" class="btn btn-secondary">Ward High-Contrast</button>
+  <main class="container main-content">
+    <div id="systemNotice" class="notice-banner" hidden></div>
+
+    <!-- 1. PHRASE FINDER TAB -->
+    <section id="finderTab" class="tab-panel active">
+      <div class="toolbar">
+        <div class="search-wrap">
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="Search English, Idoma, Alala (Orokam), symptom, or body part (e.g., pain, ikpeyi, headache)..."
+            aria-label="Search clinical phrases"
+          />
         </div>
 
-        <!-- One-thumb Section Pills -->
-        <div id="sectionPills" class="section-pills" role="tablist" aria-label="Clinical sections"></div>
+        <div class="filter-group">
+          <select id="statusFilter" aria-label="Filter by verification status">
+            <option value="ALL">All Statuses</option>
+            <option value="verified">Verified Only</option>
+            <option value="unconfirmed">Unconfirmed (?)</option>
+            <option value="missing">Pending / Blank</option>
+          </select>
+
+          <button type="button" id="alalaFilterBtn" class="btn btn-secondary" title="Show entries with Alala (Orokam) dialect translations">
+            Alala (Orokam)
+          </button>
+
+          <button type="button" id="bedsideToggleBtn" class="btn btn-secondary" title="Toggle large high-contrast bedside typography">
+            Ward High-Contrast
+          </button>
+        </div>
       </div>
 
-      <div class="results-meta-row">
-        <span id="resultCount" class="muted small-note"></span>
-        <button type="button" id="quickRequestBtn" class="btn-link">+ Request Missing Term</button>
+      <!-- Quick Section Filter Chips -->
+      <div id="sectionPills" class="section-pills" aria-label="Filter by clinical section"></div>
+
+      <div class="results-meta">
+        <span id="resultCount">Loading clinical phrases...</span>
+        <button type="button" id="quickRequestBtn" class="btn-link">+ Request missing term</button>
       </div>
 
-      <div id="fallbackBox" class="fallback-box" hidden></div>
+      <div id="fallbackBox" class="fallback-card" hidden></div>
       <div id="phraseList" class="phrase-grid"></div>
     </section>
 
-    <!-- 2. BEDSIDE TRAY (PINNED PHRASES FOR WARD ROUNDS) -->
+    <!-- 2. BEDSIDE TRAY TAB -->
     <section id="trayTab" class="tab-panel" hidden>
       <div class="panel">
         <div class="panel-header-row">
           <div>
-            <h3>Quick Bedside Tray</h3>
-            <p class="muted small-note">Pin high-yield questions before entering a clerkship encounter for instant offline recall.</p>
+            <h3>Active Consultation Tray</h3>
+            <p class="muted small-note">Pin phrases before entering the ward or consulting room for instant one-tap bedside access.</p>
           </div>
-          <button type="button" id="clearTrayBtn" class="btn btn-sm btn-danger">Clear Tray</button>
+          <button type="button" id="clearTrayBtn" class="btn btn-sm btn-ghost">Clear Tray</button>
         </div>
-        <div id="trayEmptyState" class="empty-state">
-          <p><strong>No phrases pinned yet.</strong></p>
-          <p class="muted small-note">Tap <em>Pin to Tray</em> on any card in Phrase Finder to keep it ready at the bedside.</p>
-          <button type="button" id="goFinderFromTrayBtn" class="btn btn-primary btn-sm">Browse Phrases</button>
+        <div id="trayEmptyState" class="empty-tray-box">
+          <p><strong>Your bedside tray is empty.</strong></p>
+          <p class="muted small-note">Tap <strong>+ Pin to Tray</strong> on any phrase card in the Phrase Finder to stage questions for your current patient encounter.</p>
+          <button type="button" class="btn btn-primary btn-sm" id="goFinderFromTrayBtn">Browse Phrases</button>
         </div>
-        <div id="trayList" class="phrase-grid" style="margin-top:14px;"></div>
+        <div id="trayList" class="phrase-grid"></div>
       </div>
     </section>
 
-    <!-- 3. PRACTICE DRILLS -->
+    <!-- 3. PRACTICE TAB -->
     <section id="practiceTab" class="tab-panel" hidden>
-      <div id="practiceCard" class="panel practice-shell"></div>
+      <div class="panel practice-panel">
+        <div class="panel-header-row">
+          <div>
+            <h3>Clinical Recall &amp; Pronunciation Drill</h3>
+            <p class="muted small-note">Practice translating both directions, inspect syllable stress, and listen to approved native audio.</p>
+          </div>
+        </div>
+        <div id="practiceCard" class="flashcard"></div>
+      </div>
     </section>
 
-    <!-- 4. LISTEN & POINT MODE -->
+    <!-- 4. LISTEN & POINT TAB -->
     <section id="listenTab" class="tab-panel" hidden>
       <div class="two-col">
         <div class="panel">
-          <h3>Best-Match Response Helper (Non-Transcribing)</h3>
-          <p class="muted small-note">Standard speech-to-text does not reliably transcribe Idoma. This helper compares short audio snippets against known entries to suggest top candidate matches—always confirm directly with the patient.</p>
-          <div class="btn-row">
+          <h3>Patient Speech Helper (Experimental)</h3>
+          <p class="muted">Record a short patient response (1–3 seconds) to compare against approved native audio clips. Always confirm directly with the patient.</p>
+          <div class="recorder-controls">
             <button type="button" id="listenRecordBtn" class="btn btn-primary">Listen for Best Match</button>
+            <span id="listenStatus" class="muted"></span>
           </div>
-          <p id="listenStatus" class="muted small-note" style="margin-top:8px;"></p>
-          <div id="listenMatches" style="margin-top:10px;"></div>
+          <div id="listenMatches" class="match-list"></div>
         </div>
 
         <div class="panel">
-          <h3>Closed-Loop Visual Response Cards</h3>
-          <p class="muted small-note">Tap when the patient points or confirms a response at the bedside:</p>
-          <div class="chips-wrap">
-            <button type="button" class="chip-btn" data-response-chip="Yes / Confirmed">Yes / Confirmed</button>
-            <button type="button" class="chip-btn" data-response-chip="No / Not that">No / Not that</button>
-            <button type="button" class="chip-btn" data-response-chip="Mild pain (1-3)">Mild pain (1-3)</button>
-            <button type="button" class="chip-btn" data-response-chip="Moderate pain (4-6)">Moderate pain (4-6)</button>
-            <button type="button" class="chip-btn" data-response-chip="Severe pain (7-10)">Severe pain (7-10)</button>
-            <button type="button" class="chip-btn" data-response-chip="Started today">Started today</button>
-            <button type="button" class="chip-btn" data-response-chip="Started yesterday or earlier">Started yesterday or earlier</button>
-            <button type="button" class="chip-btn" data-response-chip="Constant">Constant</button>
-            <button type="button" class="chip-btn" data-response-chip="Comes and goes">Comes and goes</button>
+          <h3>Quick Visual &amp; Idoma Response Cards</h3>
+          <p class="muted">Tap to log the patient's confirmed answer during clerking:</p>
+          <div class="chip-grid" id="quickResponseChips">
+            <button type="button" class="chip-btn" data-response-chip="Yes">Yes</button>
+            <button type="button" class="chip-btn" data-response-chip="No">No</button>
+            <button type="button" class="chip-btn" data-response-chip="I'm better (Ode ya gam)">Ode ya gam (Better)</button>
+            <button type="button" class="chip-btn" data-response-chip="Not feeling better (Iye a o ya gam)">Iye a o ya gam (Not better)</button>
+            <button type="button" class="chip-btn" data-response-chip="A little / Mild (Ligi ne)">Ligi ne (Mild)</button>
+            <button type="button" class="chip-btn" data-response-chip="A lot / Severe (Gaga)">Gaga (Severe)</button>
+            <button type="button" class="chip-btn" data-response-chip="Sharp pain (Oho butwor ne)">Oho butwor ne (Sharp)</button>
+            <button type="button" class="chip-btn" data-response-chip="Burning pain (Oho kola twor ne)">Oho kola twor ne (Burning)</button>
+            <button type="button" class="chip-btn" data-response-chip="Constant (Ono yo halegey)">Ono yo halegey (Constant)</button>
+            <button type="button" class="chip-btn" data-response-chip="Comes & goes (Oge nyo ge wa)">Oge nyo ge wa (Intermittent)</button>
+            <button type="button" class="chip-btn" data-response-chip="Today (Iche)">Iche (Today)</button>
+            <button type="button" class="chip-btn" data-response-chip="Yesterday (Ené)">Ené (Yesterday)</button>
           </div>
-          <h4 class="mt-lg">Bedside Response Log</h4>
-          <ul id="responseLog" class="small-note"></ul>
+          <ul id="responseLog" class="response-list"></ul>
         </div>
       </div>
     </section>
 
-    <!-- 5. CONTRIBUTE / REQUEST / AUDIO -->
+    <!-- 5. CONTRIBUTE / REQUEST TAB -->
     <section id="contributeTab" class="tab-panel" hidden>
       <div class="two-col">
-        <div class="panel">
-          <h3>Submit Phrase Edit, New Term, or Request</h3>
-          <p class="muted small-note">Anyone can request missing clinical terms. Signed-in contributors submit translations and dialect updates to the Admin queue.</p>
-          <form id="phraseSubForm" class="stack-form">
-            <input type="hidden" id="subTargetId" />
-            <label>Submission Type
-              <select id="subType">
-                <option value="term_request">Request Missing Term</option>
-                <option value="new_phrase">New Phrase / Translation</option>
-                <option value="edit_phrase">Suggest Edit to Existing Phrase</option>
+        <form id="phraseSubForm" class="panel stack-form">
+          <h3>Submit Translation, Edit, or Term Request</h3>
+          <p class="muted">Anyone may request missing terms. Signed-in contributors can propose new translations, Alala (Orokam) dialect equivalents, or corrections (published after Admin review).</p>
+
+          <label>
+            Submission Type
+            <select id="subType">
+              <option value="term_request">Request a Missing Clinical Term (Open to All)</option>
+              <option value="new_phrase">Propose New Translated Phrase (Contributors)</option>
+              <option value="edit_phrase">Suggest Correction / Dialect Variation (Contributors)</option>
+            </select>
+          </label>
+
+          <input type="hidden" id="subTargetId" />
+
+          <div class="two-col">
+            <label>
+              Clinical Section
+              <select id="subSection">
+                <option>I. Tone &amp; Pronunciation</option>
+                <option>II. Rapport &amp; Introduction</option>
+                <option>III. Core Symptoms</option>
+                <option>IV. Presenting Complaint</option>
+                <option>V. Time &amp; Duration</option>
+                <option>VI. Anatomical &amp; Body Parts</option>
+                <option>VII. Past Medical &amp; Drug History</option>
+                <option>VIII. Family History</option>
+                <option>IX. Social History</option>
+                <option>X. Pediatric Vocabulary</option>
+                <option>XI. Systemic &amp; Organ Review</option>
+                <option>XII. Examination Commands &amp; Consent</option>
+                <option>XIII. Post-Assessment Communication</option>
+                <option>XIV. Emergency &amp; Red Flags</option>
+                <option>XV. Cultural Communication</option>
+                <option>XVI. Quick Reference</option>
               </select>
             </label>
-            <div class="two-col">
-              <label>Section
-                <select id="subSection">
-                  <option>I. Anatomy &amp; Positions</option>
-                  <option>II. Rapport &amp; Introduction</option>
-                  <option>III. Biodata</option>
-                  <option>IV. Presenting Complaint</option>
-                  <option>V. Common Diseases &amp; Symptoms</option>
-                  <option>VI. Physiology &amp; Pathology</option>
-                  <option>VII. Past Medical History</option>
-                  <option>VIII. Family History</option>
-                  <option>IX. Social History</option>
-                  <option>X. Pediatric Vocabulary</option>
-                  <option>XI. Vital Signs</option>
-                  <option>XII. Examination Commands</option>
-                  <option>XIII. Post-Assessment Communication</option>
-                  <option>XIV. Addendum</option>
-                </select>
-              </label>
-              <label>Subsection <input type="text" id="subSubsection" placeholder="e.g. A. Parts of the Body" /></label>
-            </div>
-            <label>English Term / Clinical Question * <input type="text" id="subEnglish" required placeholder="e.g. Do you have any questions for me?" /></label>
-            <div class="two-col">
-              <label>Idoma Translation <input type="text" id="subIdoma" placeholder="General Idoma phrasing" /></label>
-              <label>Alala (Orokam) Dialect <input type="text" id="subAlala" placeholder="Alala variant if known" /></label>
-            </div>
-            <div class="two-col">
-              <label>Syllable Breakdown <input type="text" id="subSyllables" placeholder="e.g. o-kpe-yi" /></label>
-              <label>Phonetic Hint <input type="text" id="subPhonetic" placeholder="e.g. 'o' as in orange" /></label>
-            </div>
-            <label>Tone / Pitch Note <input type="text" id="subTone" placeholder="Warn if tone distinguishes meaning" /></label>
-            <label>Clinical / Dialect Note <textarea id="subClinical" placeholder="Context, anatomical overlap, or dialect note"></textarea></label>
-            <div class="two-col">
-              <label>Proposed Verification Status
-                <select id="subStatus">
-                  <option value="unconfirmed">Unconfirmed</option>
-                  <option value="verified">Verified</option>
-                  <option value="missing">Missing</option>
-                </select>
-              </label>
-              <label>Variation Of (optional ID) <input type="text" id="subVariationOf" placeholder="Base phrase ID if variant" /></label>
-            </div>
-            <label class="checkbox-row"><input type="checkbox" id="subAllowVar" /> Mark as legitimate dialect/phrasing variation (not a duplicate)</label>
-            <label>Your Name (for term requests) <input type="text" id="subRequester" placeholder="Optional name or role" /></label>
-            <button type="submit" class="btn btn-primary">Submit</button>
-          </form>
-        </div>
 
-        <div class="panel">
-          <h3>Contributor Voice Recorder (Moderated)</h3>
-          <p class="muted small-note">Requires a Contributor or Admin code. Recordings go to Admin review and become available to all students once approved.</p>
-          <form class="stack-form" onsubmit="return false;">
-            <label>Target Phrase
-              <select id="audioPhraseSelect"></select>
+            <label>
+              Subsection (Optional)
+              <input type="text" id="subSubsection" placeholder="e.g. Pain Qualifiers" />
             </label>
-            <label>Dialect / Speaker Note <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo / Alala (Orokam) native speaker" /></label>
-            <div class="btn-row">
-              <button type="button" id="recordToggleBtn" class="btn btn-secondary">Record Pronunciation</button>
-              <button type="button" id="saveAudioBtn" class="btn btn-primary" disabled>Submit Clip for Review</button>
-            </div>
-            <p id="recordStateText" class="muted small-note" style="margin-top:8px;">Ready.</p>
-            <audio id="audioPreview" controls class="audio-player" hidden></audio>
-          </form>
+          </div>
+
+          <label>
+            English Term / Clinical Question *
+            <input type="text" id="subEnglish" required placeholder="e.g. Please take a deep breath" />
+          </label>
+
+          <div class="two-col">
+            <label>
+              Idoma Translation
+              <input type="text" id="subIdoma" placeholder="General Idoma phrasing" />
+            </label>
+            <label>
+              Alala (Orokam) Dialect (Optional)
+              <input type="text" id="subAlala" placeholder="Alala / Orokam equivalent" />
+            </label>
+          </div>
+
+          <div class="two-col">
+            <label>
+              Syllable Breakdown
+              <input type="text" id="subSyllables" placeholder="e.g. o-ho bo-tu-wor ne" />
+            </label>
+            <label>
+              Phonetic Hint
+              <input type="text" id="subPhonetic" placeholder="e.g. OH-hoh BOH-too-wor neh" />
+            </label>
+          </div>
+
+          <label>
+            Tone / Pitch Warning
+            <input type="text" id="subTone" placeholder="Note high/low pitch contrasts or homographs" />
+          </label>
+
+          <label>
+            Clinical / Cultural Usage Note
+            <textarea id="subClinical" rows="2" placeholder="Bedside etiquette, dialect note, or context"></textarea>
+          </label>
+
+          <div class="two-col">
+            <label>
+              Proposed Confidence Status
+              <select id="subStatus">
+                <option value="unconfirmed">Unconfirmed (?) — Needs verification</option>
+                <option value="verified">Verified — Confirmed by native speaker</option>
+                <option value="missing">Blank / Awaiting translation</option>
+              </select>
+            </label>
+
+            <label>
+              Your Name / Role (If guest request)
+              <input type="text" id="subRequester" placeholder="e.g. 300L Medical Student" />
+            </label>
+          </div>
+
+          <label class="checkbox-line">
+            <input type="checkbox" id="subAllowVar" />
+            <span>Allow as a valid dialect or phrasing variation even if English term already exists</span>
+          </label>
+          <input type="hidden" id="subVariationOf" />
+
+          <button type="submit" class="btn btn-primary">Submit Entry</button>
+        </form>
+
+        <!-- Voice Recorder Panel -->
+        <div class="panel stack-form">
+          <h3>Record Native Pronunciation Audio</h3>
+          <p class="muted">Authorized contributors can record clear voice clips for any entry. Recordings remain queued until approved by an Admin.</p>
+
+          <label>
+            Select Phrase to Record
+            <select id="audioPhraseSelect"></select>
+          </label>
+
+          <label>
+            Dialect / Speaker Note (Optional)
+            <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo central / Alala (Orokam) dialect" />
+          </label>
+
+          <div class="recorder-controls">
+            <button type="button" id="recordToggleBtn" class="btn btn-secondary">Record Pronunciation</button>
+            <span id="recordStateText" class="muted">Ready</span>
+          </div>
+
+          <audio id="audioPreview" controls hidden class="audio-player"></audio>
+
+          <button type="button" id="saveAudioBtn" class="btn btn-primary" disabled>Submit Audio for Review</button>
         </div>
       </div>
     </section>
 
-    <!-- 6. ABOUT, PREFACE & CREDITS -->
+    <!-- 6. GUIDE & CREDITS TAB -->
     <section id="aboutTab" class="tab-panel" hidden>
-      <div class="about-stack">
-        <div class="panel">
-          <h3>Why This Phrasebook Exists</h3>
-          <p>
-            Reference guides for taking a clinical history in Hausa, Yoruba, and Igbo have circulated in Nigerian medical training for years—but no comparable resource for <strong>Idoma</strong> has been widely available, despite Idoma being spoken by millions of people across Benue State and beyond.
-          </p>
-          <p>
-            Through public health awareness campaigns, one lesson stood out clearly: there is a profound difference between information that is merely available and information that genuinely lands in a language people trust. At the bedside, a history taken in a patient's own language is a more complete and more honest history—especially now as <strong>FUHSO's pioneer cohort</strong> steps onto the clinical wards.
-          </p>
+      <div class="panel">
+        <h3>Why Tone Matters in Clinical Idoma</h3>
+        <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters. Misplacing tone can alter meaning completely. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
+        <div class="tone-examples">
+          <div class="tone-card"><strong>Ebi</strong> — Blood vs. Feces vs. To be dark (pitch-dependent)</div>
+          <div class="tone-card"><strong>Ipu</strong> — Abdomen / Stomach vs. Inside / Within</div>
+          <div class="tone-card"><strong>Akpà</strong> — Skin vs. Bag / Pocket</div>
         </div>
+      </div>
 
-        <div class="two-col">
-          <div class="panel">
-            <h3>Alala (Orokam) &amp; Everyday Clinical Terms</h3>
-            <p class="small-note">
-              Idoma is spoken in more than one variety. Entries tagged <strong>Alala (Orokam)</strong> record how the language is spoken in the Orokam area—collected following a medical outreach there where dialect differences became immediately clear at the bedside.
-            </p>
-            <p class="small-note">
-              In rural communities, patients also frequently use English words like <em>"malaria"</em> (usually meaning fever) or <em>"ulcer"</em> to describe symptoms rather than confirmed diagnoses, while terms like <em>"pile"</em> have no distinct Idoma word. Treat these as patient descriptions and ask follow-up questions rather than recording them as diagnoses.
-            </p>
-          </div>
-
-          <div class="panel">
-            <h3>About the Author &amp; Acknowledgments</h3>
-            <p class="small-note">
-              <strong>Alex Sunday Okoh</strong> is a 300-level medical student at the Federal University of Health Sciences, Otukpo (FUHSO).
-            </p>
-            <p class="small-note">
-              <strong>Acknowledgments:</strong> First, to God. To family and friends for constant support. To the <strong>Christian Medical and Dental Association (CMDA)</strong> and all FUHSO lecturers—with particular thanks to <strong>Dr. Eli</strong>, whose mentorship since first year reaches well beyond his own subject—and to all native speakers and elders who verified terms.
-            </p>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>Editorial &amp; Verification Contributors</h3>
-          <p class="muted small-note">Verified translations, dialect notes, clinical accuracy reviews, and proofreading:</p>
-          <div id="creditsGrid" class="credits-grid" style="margin-top:12px;"></div>
-        </div>
+      <div class="panel">
+        <h3>Project Contributors &amp; Reviewers</h3>
+        <p class="muted">Community clinicians, medical students, and native Idoma &amp; Alala (Orokam) speakers building this open clinical resource.</p>
+        <div id="creditsGrid" class="credits-grid"></div>
       </div>
     </section>
 
-    <!-- 7. ADMIN STUDIO -->
+    <!-- 7. ADMIN STUDIO TAB -->
     <section id="adminTab" class="tab-panel" hidden>
       <div id="adminContent"></div>
     </section>
   </main>
 
-  <!-- Subtle Footer with Hidden-by-Default Contributor Access -->
-  <footer class="site-footer">
+  <!-- Subtle Discreet Footer with Contributor Sign-In Trigger -->
+  <footer class="app-footer">
     <div class="container footer-inner">
-      <span class="muted small-note">Idoma Medical Phrasebook © 2026 · FUHSO Department of Medicine &amp; Surgery</span>
+      <span class="muted small-note">Idoma Medical Clinical Phrasebook · Built for bedside communication at FUHSO &amp; Benue clinics</span>
       <div class="footer-links">
-        <button type="button" id="footerAboutBtn" class="btn-link">Preface &amp; Credits</button>
-        <span class="muted">·</span>
-        <button type="button" id="footerLoginTrigger" class="btn-link">Contributor Access</button>
+        <button type="button" id="footerAboutBtn" class="footer-link">Guide &amp; Credits</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="footerLoginTrigger" class="footer-link">Contributor Access</button>
       </div>
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./js/config.js"></script>
   <script src="./js/db.js"></script>
   <script src="./js/audio-matcher.js"></script>
