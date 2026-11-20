@@ -1,0 +1,21 @@
+[
+{ "id": 1, "category": "Anatomy & Positions", "english": "Head", "idoma": "Ikpeyi, Efu", "syllables": "I-kpe-yi / E-fu", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 2, "category": "Anatomy & Positions", "english": "Face", "idoma": "Ipeyi", "syllables": "I-pe-yi", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 3, "category": "Anatomy & Positions", "english": "Eye", "idoma": "Eyi", "syllables": "E-yi", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 4, "category": "Anatomy & Positions", "english": "Ear", "idoma": "Ahor", "syllables": "A-hor", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 5, "category": "Anatomy & Positions", "english": "Nose", "idoma": "Enwu", "syllables": "E-nwu", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 6, "category": "Anatomy & Positions", "english": "Mouth", "idoma": "Okonu", "syllables": "O-ko-nu", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 7, "category": "Anatomy & Positions", "english": "Cheeks", "idoma": "Ágáà / Aba", "syllables": "Á-gá-à / A-ba", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 8, "category": "Anatomy & Positions", "english": "Neck / Throat", "idoma": "òkò", "syllables": "ò-kò", "toneNote": "Broad Register: Native speakers use 'òkò' loosely across neck, throat, trachea, and oesophagus.", "notes": "Not a precise anatomical distinction.", "verificationStatus": "verified" },
+{ "id": 9, "category": "Anatomy & Positions", "english": "Tonsils", "idoma": "Alele", "syllables": "a-le-le (ah-lay-lay)", "toneNote": "", "notes": "Pronounced 'ah-lay-lay'", "verificationStatus": "verified" },
+{ "id": 10, "category": "Anatomy & Positions", "english": "Abdomen", "idoma": "Ipu", "syllables": "I-pu", "toneNote": "Broad Register: Literally 'stomach'. Native speakers use for stomach and abdomen interchangeably.", "notes": "", "verificationStatus": "verified" },
+{ "id": 11, "category": "Rapport / Introduction", "english": "Good morning", "idoma": "Nmaochi", "syllables": "Nma-o-chi (uma ochi)", "toneNote": "Phonetic cue: 'uma ochi'", "notes": "", "verificationStatus": "verified" },
+{ "id": 12, "category": "Rapport / Introduction", "english": "How are you feeling?", "idoma": "Abo 'o yu orle / Aba 'yole / Ode yaaa e?", "syllables": "A-bo 'o yu or-le", "toneNote": "Reply: Ode ya gam (I'm better) / Iye a o ya gam (not better)", "notes": "", "verificationStatus": "verified" },
+{ "id": 13, "category": "Biodata", "english": "What is your name?", "idoma": "Odi Iye kwo", "syllables": "O-di I-ye kwo", "toneNote": "Odi = what; Iye = name; kwo = your", "notes": "", "verificationStatus": "verified" },
+{ "id": 14, "category": "Presenting Complaint", "english": "Where exactly is the pain?", "idoma": "Imi o lono tor a?", "syllables": "I-mi o lo-no tor a?", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 15, "category": "Presenting Complaint", "english": "What does the pain feel like?", "idoma": "Ab'ono a le ya?", "syllables": "Ab'o-no a le ya?", "toneNote": "Sharp = Oho butwor ne; Burning = oho kola twor ne; Dull = oebebe kunu", "notes": "", "verificationStatus": "verified" },
+{ "id": 16, "category": "Common Diseases & Symptoms", "english": "Fever", "idoma": "Oha ola / Osaola / iba", "syllables": "O-ha o-la / O-sa-o-la", "toneNote": "", "notes": "", "verificationStatus": "verified" },
+{ "id": 17, "category": "Common Diseases & Symptoms", "english": "Cough / Sputum", "idoma": "ɔko / K'oko / O'kl'oko", "syllables": "ɔ-ko / K'o-ko", "toneNote": "", "notes": "ɔkɔ = noun; K'oko = verb; O'kl'oko = sputum", "verificationStatus": "verified" },
+{ "id": 18, "category": "Cardiovascular", "english": "Weakness / Fatigue", "idoma": "Eje / Iye kwo weak ne?", "syllables": "E-je (eh-jeh)", "toneNote": "Tonal Warning: Eje = tiredness ('eh-jeh'). Distinct pitch from Eje = alcohol ('ae-jey').", "notes": "", "verificationStatus": "verified" },
+{ "id": 19, "category": "Past Medical & Social", "english": "Do you drink alcohol?", "idoma": "Ayi gwe je?", "syllables": "A-yi gwe je (ae-jey)", "toneNote": "Tonal Warning: Eje = alcohol ('ae-jey'). Distinct tone from Eje = tiredness.", "notes": "", "verificationStatus": "verified" }
+]
