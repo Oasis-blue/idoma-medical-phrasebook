@@ -1,407 +1,204 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Idoma Medical Phrasebook - Clinical Communication Tool</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <!-- Supabase JS Client CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Idoma Medical Phrasebook & Clinical Communication Tool</title>
+  <link rel="stylesheet" href="./css/styles.css" />
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col transition-colors duration-200">
-
-    <!-- DISCLAIMER BANNER -->
-    <div id="disclaimer-banner" class="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs transition-all duration-300">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
-            <div class="flex items-start gap-2">
-                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-sm mt-0.5 shrink-0"></i>
-                <div>
-                    <span class="font-bold uppercase text-[10px] bg-amber-200 text-amber-950 px-1.5 py-0.5 rounded mr-1">Tonal Language Advisory</span>
-                    <span><strong>Idoma is tonal.</strong> Pitch patterns alter word meaning. Syllables and spelling are learning guides—verify aloud with native speakers.</span>
-                </div>
-            </div>
-            <button onclick="dismissDisclaimer()" class="text-amber-700 hover:text-amber-950 text-[11px] font-semibold underline shrink-0">
-                Dismiss Banner
-            </button>
-        </div>
-    </div>
-
-    <!-- MAIN HEADER -->
-    <header class="bg-emerald-900 text-white shadow-md sticky top-0 z-30">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3 cursor-pointer" onclick="switchTab('finder')">
-                <div class="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shadow-inner font-black text-xl">
-                    <i class="fa-solid fa-stethoscope"></i>
-                </div>
-                <div>
-                    <div class="flex items-center gap-2">
-                        <h1 class="font-bold text-base md:text-lg leading-tight">Idoma Medical Phrasebook</h1>
-                        <span class="bg-emerald-700 text-emerald-100 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-600">FUHSO 2026</span>
-                    </div>
-                    <p class="text-[11px] text-emerald-200">Department of Medicine & Surgery • FUHSO Otukpo</p>
-                </div>
-            </div>
-
-            <!-- Navigation Tabs -->
-            <div class="flex items-center gap-2 flex-wrap">
-                <nav class="flex bg-emerald-950/70 p-1 rounded-xl text-xs font-medium border border-emerald-800">
-                    <button id="nav-finder" onclick="switchTab('finder')" class="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-semibold transition-all shadow-sm">
-                        <i class="fa-solid fa-book-medical mr-1.5"></i> Phrase Finder
-                    </button>
-                    <button id="nav-listen" onclick="switchTab('listen')" class="px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all text-emerald-200">
-                        <i class="fa-solid fa-ear-listen mr-1.5 text-amber-300"></i> Listen Mode
-                    </button>
-                    <button id="nav-tray" onclick="switchTab('tray')" class="px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all flex items-center gap-1.5">
-                        <i class="fa-solid fa-bookmark text-amber-400"></i> Tray 
-                        <span id="tray-count-badge" class="bg-amber-400 text-emerald-950 font-black px-1.5 py-0.2 text-[10px] rounded-full">0</span>
-                    </button>
-                    <button id="nav-practice" onclick="switchTab('practice')" class="px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all">
-                        <i class="fa-solid fa-brain mr-1.5 text-sky-300"></i> Drills
-                    </button>
-                    <button id="nav-studio" onclick="switchTab('studio')" class="px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all">
-                        <i class="fa-solid fa-microphone mr-1.5 text-rose-300"></i> Studio
-                    </button>
-                    <button id="nav-admin" onclick="switchTab('admin')" class="px-3 py-1.5 rounded-lg hover:bg-emerald-800/60 transition-all">
-                        <i class="fa-solid fa-database mr-1.5 text-purple-300"></i> Admin / Cloud
-                    </button>
-                </nav>
-
-                <button onclick="openCreditsModal()" class="bg-emerald-800 hover:bg-emerald-700 text-emerald-100 p-2 rounded-xl text-xs flex items-center gap-1.5 transition-all border border-emerald-700" title="Credits & Authors">
-                    <i class="fa-solid fa-circle-info text-base"></i>
-                    <span class="hidden sm:inline">Credits</span>
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <!-- MAIN BODY -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
-
-        <!-- TAB 1: PHRASE FINDER -->
-        <section id="view-finder" class="space-y-6">
-            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-4 card-bg">
-                <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-                    <div class="relative flex-grow">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="search-input" oninput="handleSearch()" placeholder="Search in English, Idoma, or clinical terms (e.g. cough, fever, waist, Nmaochi, òkò)..." 
-                            class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm bg-slate-50 focus:bg-white text-slate-900 transition-all">
-                        <button id="search-clear-btn" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                            <i class="fa-solid fa-circle-xmark"></i>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                        <button id="bedside-toggle-btn" onclick="toggleBedsideFocus()" class="px-3.5 py-2 rounded-xl border border-slate-300 hover:border-slate-400 text-xs font-semibold flex items-center gap-2 bg-slate-100 text-slate-700 transition-all">
-                            <i class="fa-solid fa-moon text-slate-500"></i> High-Contrast Focus
-                        </button>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2 border-t border-b border-slate-100 py-2.5 overflow-x-auto text-xs no-scrollbar">
-                    <span class="text-slate-400 font-semibold shrink-0 text-[11px] uppercase tracking-wider text-muted">Filter:</span>
-                    <button onclick="selectStatusFilter('all')" id="status-pill-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 text-white transition-all">All Phrases</button>
-                    <button onclick="selectStatusFilter('verified')" id="status-pill-verified" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-all">Verified</button>
-                    <button onclick="selectStatusFilter('unconfirmed')" id="status-pill-unconfirmed" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-all">Unconfirmed (?)</button>
-                    <button onclick="selectStatusFilter('missing')" id="status-pill-missing" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-100 text-rose-800 hover:bg-rose-200 transition-all">Missing / Draft</button>
-                </div>
-
-                <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar" id="category-pills"></div>
-            </div>
-
-            <div class="flex items-center justify-between text-xs text-slate-500 px-1 text-muted">
-                <div>Showing <span id="results-count" class="font-bold text-slate-800 text-muted">0</span> phrases <span id="active-category-label" class="ml-1 text-emerald-700 font-medium"></span></div>
-                <button onclick="openRequestModal()" class="text-emerald-700 hover:text-emerald-900 font-semibold flex items-center gap-1">
-                    <i class="fa-solid fa-plus-circle"></i> Request Missing Term
-                </button>
-            </div>
-
-            <div id="smart-fallback-notice" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-4 text-amber-900 space-y-2">
-                <div class="flex items-center gap-2 font-bold text-sm text-amber-800">
-                    <i class="fa-solid fa-lightbulb text-amber-600"></i> Exact Phrase Not In Verified Glossary
-                </div>
-                <p class="text-xs">We couldn't find an exact match for "<span id="fallback-query-text" class="font-semibold underline"></span>". Showing closest clinical matches below.</p>
-                <button onclick="openRequestModal(currentSearchQuery)" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-all flex items-center gap-1.5">
-                    <i class="fa-solid fa-paper-plane"></i> Submit "<span id="fallback-btn-text"></span>" to Queue
-                </button>
-            </div>
-
-            <div id="phrase-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-        </section>
-
-        <!-- TAB 2: LISTEN MODE -->
-        <section id="view-listen" class="hidden space-y-6">
-            <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                <div>
-                    <span class="bg-amber-400 text-slate-950 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">Bedside Assistant</span>
-                    <h2 class="text-2xl font-bold text-white mt-1">Patient Interaction & Listener</h2>
-                    <p class="text-xs text-slate-300 max-w-xl">Listen to short patient speech utterances or use closed-loop response cards for direct patient feedback.</p>
-                </div>
-
-                <div class="bg-slate-800/90 rounded-2xl p-5 border border-slate-700/80 space-y-4">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-microphone-lines text-sky-400 text-lg"></i>
-                            <h3 class="text-sm font-bold text-white">1. Acoustic Pattern Listener</h3>
-                        </div>
-                        <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-1 rounded font-mono" id="listen-status-badge">Standby</span>
-                    </div>
-
-                    <div class="flex flex-col sm:flex-row items-center gap-4 bg-slate-900/80 p-4 rounded-xl border border-slate-700/60">
-                        <button id="patient-listen-btn" onclick="togglePatientListening()" class="w-full sm:w-auto bg-sky-500 hover:bg-sky-400 text-slate-950 font-black px-6 py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm shrink-0">
-                            <i class="fa-solid fa-microphone" id="patient-listen-icon"></i>
-                            <span id="patient-listen-btn-text">Listen to Patient Utterance</span>
-                        </button>
-                        <div class="text-xs text-slate-300 space-y-0.5 w-full">
-                            <div class="font-bold text-slate-200" id="patient-listen-timer">00:00 • Tap mic to record candidate speech snippet</div>
-                            <p class="text-[11px] text-slate-400">Matches audio feature vectors against reference dataset.</p>
-                        </div>
-                    </div>
-
-                    <div id="patient-match-results" class="hidden space-y-3 pt-2">
-                        <div class="flex items-center justify-between text-xs text-slate-300 border-t border-slate-700/60 pt-3">
-                            <span class="font-bold text-sky-300 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-chart-line mr-1"></i> Candidate Acoustic Matches</span>
-                        </div>
-                        <div id="patient-match-list" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
-                    </div>
-                </div>
-
-                <div class="bg-slate-800/90 rounded-2xl p-5 border border-slate-700/80 space-y-4">
-                    <h3 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-hand-pointer text-emerald-400"></i> 2. Closed-Loop Patient Response Cards</h3>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-700/80 space-y-3">
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="font-bold text-slate-200"><i class="fa-solid fa-gauge-high text-rose-400 mr-1"></i> Pain Scale / Ede gi (1 - 10)</span>
-                            </div>
-                            <div class="grid grid-cols-5 gap-1.5 text-center font-bold text-xs">
-                                <button onclick="selectPatientAnswer('Pain Level: 1-2 (Mild)')" class="bg-emerald-950 border border-emerald-700 text-emerald-200 py-2 rounded-xl">1 - 2</button>
-                                <button onclick="selectPatientAnswer('Pain Level: 3-4 (Moderate)')" class="bg-emerald-900 border border-emerald-600 text-emerald-100 py-2 rounded-xl">3 - 4</button>
-                                <button onclick="selectPatientAnswer('Pain Level: 5-6 (Severe)')" class="bg-amber-950 border border-amber-700 text-amber-200 py-2 rounded-xl">5 - 6</button>
-                                <button onclick="selectPatientAnswer('Pain Level: 7-8 (V. Severe)')" class="bg-orange-950 border border-orange-700 text-orange-200 py-2 rounded-xl">7 - 8</button>
-                                <button onclick="selectPatientAnswer('Pain Level: 9-10 (Worst)')" class="bg-rose-950 border border-rose-700 text-rose-200 py-2 rounded-xl">9 - 10</button>
-                            </div>
-                        </div>
-
-                        <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-700/80 space-y-3 flex flex-col justify-between">
-                            <span class="font-bold text-slate-200 text-xs"><i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Direct Confirmation (Yes / No)</span>
-                            <div class="grid grid-cols-2 gap-3 text-center font-bold text-sm">
-                                <button onclick="selectPatientAnswer('Patient Confirmed YES (EE)')" class="bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl">YES / EE</button>
-                                <button onclick="selectPatientAnswer('Patient Confirmed NO (O-O)')" class="bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-xl">NO / O-O</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="patient-selected-summary" class="hidden bg-emerald-950 border border-emerald-700/80 rounded-2xl p-4 text-emerald-200 space-y-1">
-                        <div class="flex items-center justify-between text-xs font-bold text-emerald-300">
-                            <span>Logged Patient Responses</span>
-                            <button onclick="clearPatientResponseLog()" class="text-emerald-400 hover:text-emerald-200 underline text-[10px]">Clear Log</button>
-                        </div>
-                        <p id="patient-selected-text" class="text-sm font-black text-white"></p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB 3: BEDSIDE TRAY -->
-        <section id="view-tray" class="hidden space-y-6">
-            <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm card-bg">
-                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
-                    <div>
-                        <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2"><i class="fa-solid fa-bookmark text-amber-500"></i> Quick Bedside Tray</h2>
-                        <p class="text-xs text-slate-500 text-muted">Pinned phrases for rapid clinical lookup during rounds.</p>
-                    </div>
-                    <button onclick="clearTray()" class="text-xs text-rose-600 hover:text-rose-800 font-semibold">Clear Tray</button>
-                </div>
-                <div id="tray-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4"></div>
-                <div id="tray-empty-state" class="text-center py-12 text-slate-400 space-y-3">
-                    <i class="fa-solid fa-folder-open text-4xl text-slate-300"></i>
-                    <p class="text-sm font-medium">Your Bedside Tray is empty.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB 4: PRACTICE DRILLS -->
-        <section id="view-practice" class="hidden space-y-6">
-            <div class="max-w-2xl mx-auto bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6 card-bg">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div>
-                        <span class="text-[10px] font-extrabold uppercase tracking-widest text-sky-600 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-100">Active Recall</span>
-                        <h2 class="text-xl font-bold text-slate-900 mt-1">Clinical Recall Drill</h2>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-xs text-slate-400">Streak</div>
-                        <div class="text-lg font-black text-emerald-600 flex items-center justify-end gap-1"><i class="fa-solid fa-fire text-amber-500"></i> <span id="drill-streak">0</span></div>
-                    </div>
-                </div>
-
-                <div id="drill-card-box" class="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 min-h-[260px] flex flex-col justify-between shadow-lg">
-                    <div class="flex items-center justify-between text-xs text-slate-400">
-                        <span id="drill-category" class="bg-slate-700/80 px-2.5 py-1 rounded-lg text-slate-200 font-medium">Category</span>
-                        <span id="drill-progress" class="font-mono">Card 1</span>
-                    </div>
-                    <div class="my-5 text-center space-y-3">
-                        <p class="text-xs text-slate-400 uppercase tracking-wider">Translate to Idoma</p>
-                        <h3 id="drill-prompt-english" class="text-2xl md:text-3xl font-bold text-white">English Prompt</h3>
-                        <div id="drill-answer-box" class="hidden pt-4 border-t border-slate-700/80 space-y-2">
-                            <p id="drill-answer-idoma" class="text-2xl font-black text-sky-400"></p>
-                            <p id="drill-answer-syllables" class="text-xs text-emerald-300 font-mono"></p>
-                            <div id="drill-answer-tonenote" class="hidden text-[11px] bg-amber-950/80 text-amber-200 p-2 rounded-lg border border-amber-800/60 text-left"></div>
-                        </div>
-                    </div>
-                    <div id="drill-actions-reveal" class="flex justify-center">
-                        <button onclick="revealDrillAnswer()" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold py-3 rounded-xl transition-all">Reveal Translation</button>
-                    </div>
-                    <div id="drill-actions-grade" class="hidden grid grid-cols-2 gap-3">
-                        <button onclick="gradeDrill(false)" class="bg-rose-500/20 border border-rose-500/40 text-rose-200 font-semibold py-2.5 rounded-xl text-xs">Needs Review</button>
-                        <button onclick="gradeDrill(true)" class="bg-emerald-500/30 border border-emerald-500/50 text-emerald-200 font-semibold py-2.5 rounded-xl text-xs">Got It Right</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB 5: STUDIO -->
-        <section id="view-studio" class="hidden space-y-6">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-1 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5 card-bg">
-                    <div>
-                        <span class="text-[10px] font-bold uppercase text-rose-600 bg-rose-50 px-2 py-1 rounded-full">Voice Studio</span>
-                        <h2 class="text-lg font-bold text-slate-900 mt-1">Record Spoken Audio</h2>
-                    </div>
-                    <div class="space-y-3 text-xs">
-                        <div>
-                            <label class="block font-semibold text-slate-700 mb-1">Select Phrase *</label>
-                            <select id="studio-phrase-select" onchange="loadSelectedPhraseToEditor()" class="w-full p-2.5 rounded-xl border border-slate-300 text-xs bg-slate-50 font-medium"></select>
-                        </div>
-                        <div class="bg-slate-900 text-white rounded-2xl p-5 text-center space-y-4">
-                            <div class="text-2xl font-mono font-bold text-sky-400" id="recording-timer">00:00</div>
-                            <button id="mic-record-btn" onclick="toggleMicRecording()" class="w-16 h-16 rounded-full bg-rose-600 text-white flex items-center justify-center mx-auto shadow-lg text-xl">
-                                <i class="fa-solid fa-microphone"></i>
-                            </button>
-                            <audio id="studio-audio-preview" controls class="w-full hidden mt-2"></audio>
-                            <button id="save-audio-btn" disabled onclick="saveAudioToPhrase()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 rounded-xl text-xs">Save Recording</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6 card-bg">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                        <h2 class="text-lg font-bold text-slate-900">Contributor Data Editor</h2>
-                        <div class="flex items-center gap-2">
-                            <button onclick="exportPhrasebookJSON()" class="bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-semibold">Export JSON</button>
-                        </div>
-                    </div>
-                    <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                            <div><label class="block font-semibold mb-1">Idoma Translation</label><input type="text" id="edit-field-idoma" class="w-full p-2.5 rounded-xl border bg-white"></div>
-                            <div><label class="block font-semibold mb-1">Syllables</label><input type="text" id="edit-field-syllables" class="w-full p-2.5 rounded-xl border bg-white"></div>
-                            <div><label class="block font-semibold mb-1">Status</label><select id="edit-field-status" class="w-full p-2.5 rounded-xl border bg-white"><option value="verified">Verified</option><option value="unconfirmed">Unconfirmed</option><option value="missing">Missing</option></select></div>
-                            <div><label class="block font-semibold mb-1">Tone Caution</label><input type="text" id="edit-field-tonenote" class="w-full p-2.5 rounded-xl border bg-white"></div>
-                        </div>
-                        <button onclick="saveEntryEdits()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold">Save Metadata Changes</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB 6: ADMIN & SUPABASE CLOUD -->
-        <section id="view-admin" class="hidden space-y-6">
-            <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6 card-bg">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div>
-                        <span class="bg-purple-100 text-purple-900 border text-[10px] font-bold px-2 py-0.5 rounded-full">Supabase Backend</span>
-                        <h2 class="text-2xl font-bold text-slate-900 mt-1">Admin Moderation & Database</h2>
-                    </div>
-                    <select id="user-role-selector" onchange="setUserRole(this.value)" class="bg-slate-900 text-white font-bold text-xs p-2 rounded-xl">
-                        <option value="admin">Admin / Lead (Alex Sunday Okoh)</option>
-                        <option value="contributor">Verified Contributor</option>
-                        <option value="student">Student / Read-Only</option>
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-slate-50 rounded-2xl p-5 border space-y-4">
-                        <h3 class="text-sm font-bold text-slate-900"><i class="fa-solid fa-key text-purple-600 mr-1"></i> Access Codes</h3>
-                        <div class="grid grid-cols-2 gap-2 text-xs">
-                            <input type="text" id="new-contributor-name" placeholder="Name" class="p-2.5 rounded-xl border bg-white">
-                            <select id="new-contributor-role" class="p-2.5 rounded-xl border bg-white">
-                                <option value="Translation">Translation</option>
-                                <option value="Dialect Review">Dialect Review</option>
-                                <option value="Clinical Review">Clinical Review</option>
-                                <option value="Proofreading">Proofreading</option>
-                            </select>
-                        </div>
-                        <button onclick="generateContributorCode()" class="w-full bg-purple-700 text-white font-bold py-2.5 rounded-xl text-xs">Register Access Code</button>
-                        <div id="contributors-list-box" class="space-y-1 text-xs"></div>
-                    </div>
-
-                    <div class="bg-slate-50 rounded-2xl p-5 border space-y-4">
-                        <h3 class="text-sm font-bold text-slate-900"><i class="fa-solid fa-copy text-amber-600 mr-1"></i> Duplicate Check</h3>
-                        <div class="flex gap-2 text-xs">
-                            <input type="text" id="check-duplicate-term" placeholder="Term (e.g. Neck, Fever)" class="w-full p-2.5 rounded-xl border bg-white">
-                            <button onclick="runDuplicateCheck()" class="bg-amber-600 text-white font-bold px-4 py-2.5 rounded-xl">Check</button>
-                        </div>
-                        <div id="duplicate-check-result" class="hidden text-xs p-3 rounded-xl border"></div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- CREDITS MODAL -->
-    <div id="modal-credits" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl border relative max-h-[90vh] overflow-y-auto">
-            <button onclick="closeCreditsModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-            <h3 class="text-xl font-bold text-slate-900">About & Contributor Credits</h3>
-            <p class="text-xs text-slate-600">Department of Medicine and Surgery, Federal University of Health Sciences, Otukpo (FUHSO) © 2026</p>
-            <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
-                <span class="text-[10px] font-bold text-emerald-800 uppercase">Author</span>
-                <h4 class="font-bold text-slate-900 text-sm">Alex Sunday Okoh</h4>
-                <p class="text-xs text-slate-600">300-level Medical Student, FUHSO</p>
-            </div>
-            <div id="dynamic-credits-container" class="space-y-2"></div>
-            <button onclick="closeCreditsModal()" class="w-full bg-slate-900 text-white py-3 rounded-xl text-xs font-bold">Close Modal</button>
-        </div>
-    </div>
-
-    <!-- REQUEST TERM MODAL -->
-    <div id="modal-request" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border relative">
-            <button onclick="closeRequestModal()" class="absolute top-5 right-5 text-slate-400"><i class="fa-solid fa-xmark text-xl"></i></button>
-            <h3 class="text-lg font-bold text-slate-900">Request Missing Phrase</h3>
-            <form onsubmit="submitTermRequest(event)" class="space-y-3 text-xs">
-                <input type="text" id="request-input-term" required placeholder="English Clinical Phrase *" class="w-full p-3 rounded-xl border">
-                <select id="request-input-category" class="w-full p-3 rounded-xl border bg-white">
-                    <option value="Presenting Complaint">Presenting Complaint</option>
-                    <option value="Cardiovascular">Cardiovascular</option>
-                    <option value="Gastrointestinal">Gastrointestinal</option>
-                    <option value="Pediatrics">Pediatrics</option>
-                    <option value="Other">Other</option>
-                </select>
-                <textarea id="request-input-note" rows="2" placeholder="Clinical context / note" class="w-full p-3 rounded-xl border"></textarea>
-                <button type="submit" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">Submit to Review Queue</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- AUDIO TOAST -->
-    <div id="toast-audio" class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 max-w-sm hidden flex items-start gap-3 text-xs">
-        <i class="fa-solid fa-volume-high text-sky-400 text-lg"></i>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
         <div>
-            <div class="font-bold text-sky-300" id="toast-phrase-title">Audio Cue</div>
-            <p id="toast-phrase-text" class="text-slate-300 italic"></p>
+          <h1 class="site-title">Idoma Medical Phrasebook</h1>
+          <p class="subtitle">Clinical history-taking & bedside communication guide · FUHSO / Alex Sunday Okoh</p>
         </div>
-    </div>
 
-    <!-- JS MODULE LOAD ORDER -->
-    <script src="js/config.js"></script>
-    <script src="js/db.js"></script>
-    <script src="js/audio-matcher.js"></script>
-    <script src="js/app.js"></script>
+        <div class="auth-box">
+          <form id="loginForm" class="code-form">
+            <input type="password" id="accessCodeInput" placeholder="Access code (e.g. ADMIN-FUHSO-01)" autocomplete="off" />
+            <button type="submit" class="btn btn-primary">Sign In</button>
+          </form>
+          <div class="session-row">
+            <span id="sessionStatus" class="muted">Checking session...</span>
+            <button type="button" id="logoutBtn" class="btn btn-sm btn-ghost" hidden>Sign Out</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="disclaimer-bar">
+        <strong>Tone & Clinical Safety Note:</strong> Idoma is tonal—pitch patterns can change meaning, and written spelling alone cannot capture tone. Always verify terms aloud with a native speaker or clinical reviewer, especially entries marked unconfirmed or missing.
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="systemNotice" class="notice-banner notice-info">Loading phrasebook...</div>
+
+    <nav class="tabs-nav" aria-label="Primary sections">
+      <button type="button" class="tab-btn active" data-tab="finderTab">Phrase Finder</button>
+      <button type="button" class="tab-btn" data-tab="practiceTab">Practice Mode</button>
+      <button type="button" class="tab-btn" data-tab="listenTab">Listen Mode</button>
+      <button type="button" class="tab-btn" data-tab="contributeTab">Contribute / Request</button>
+      <button type="button" class="tab-btn" data-tab="creditsTab">Contributors & Credits</button>
+      <button type="button" class="tab-btn" data-tab="adminTab" hidden>Admin Studio</button>
+    </nav>
+
+    <!-- 1. PHRASE FINDER -->
+    <section id="finderTab" class="tab-panel">
+      <div class="controls-bar">
+        <input type="search" id="searchInput" placeholder="Search English, Idoma, syllables, or symptoms (e.g. fever, neck, pain)..." />
+        <select id="sectionFilter" aria-label="Filter by clinical section"></select>
+        <select id="statusFilter" aria-label="Filter by verification status">
+          <option value="ALL">All Statuses</option>
+          <option value="verified">Verified</option>
+          <option value="unconfirmed">Unconfirmed</option>
+          <option value="missing">Missing / Draft Blank</option>
+        </select>
+        <button type="button" id="bedsideToggleBtn" class="btn btn-secondary">Bedside High-Contrast Mode</button>
+      </div>
+      <div id="resultCount" class="muted small-note" style="margin-bottom:10px;"></div>
+      <div id="fallbackBox" class="fallback-box" hidden></div>
+      <div id="phraseList" class="phrase-grid"></div>
+    </section>
+
+    <!-- 2. PRACTICE MODE -->
+    <section id="practiceTab" class="tab-panel" hidden>
+      <div id="practiceCard" class="panel"></div>
+    </section>
+
+    <!-- 3. LISTEN MODE -->
+    <section id="listenTab" class="tab-panel" hidden>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Best-Match Response Helper (Non-Transcribing)</h3>
+          <p class="muted small-note">Standard speech-to-text does not reliably transcribe Idoma. This helper compares short audio snippets against known phrase entries to suggest top candidate matches—always confirm directly with the patient.</p>
+          <div class="btn-row">
+            <button type="button" id="listenRecordBtn" class="btn btn-primary">Listen for Best Match</button>
+          </div>
+          <p id="listenStatus" class="muted small-note" style="margin-top:8px;"></p>
+          <div id="listenMatches" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Closed-Loop Visual Response Cards</h3>
+          <p class="muted small-note">Tap when the patient points or confirms a response at the bedside:</p>
+          <div class="chips-wrap">
+            <button type="button" class="chip-btn" data-response-chip="Yes / Confirmed">Yes / Confirmed</button>
+            <button type="button" class="chip-btn" data-response-chip="No / Not that">No / Not that</button>
+            <button type="button" class="chip-btn" data-response-chip="Mild pain (1-3)">Mild pain (1-3)</button>
+            <button type="button" class="chip-btn" data-response-chip="Moderate pain (4-6)">Moderate pain (4-6)</button>
+            <button type="button" class="chip-btn" data-response-chip="Severe pain (7-10)">Severe pain (7-10)</button>
+            <button type="button" class="chip-btn" data-response-chip="Started today">Started today</button>
+            <button type="button" class="chip-btn" data-response-chip="Started yesterday or earlier">Started yesterday or earlier</button>
+            <button type="button" class="chip-btn" data-response-chip="Constant">Constant</button>
+            <button type="button" class="chip-btn" data-response-chip="Comes and goes">Comes and goes</button>
+          </div>
+          <h4 class="mt-lg">Bedside Response Log</h4>
+          <ul id="responseLog" class="small-note"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CONTRIBUTE / REQUEST / AUDIO -->
+    <section id="contributeTab" class="tab-panel" hidden>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Submit Phrase Edit, New Term, or Request</h3>
+          <p class="muted small-note">Signed-in contributors submit drafts/edits to the Admin queue. Guests can request missing terms.</p>
+          <form id="phraseSubForm" class="stack-form">
+            <input type="hidden" id="subTargetId" />
+            <label>Submission Type
+              <select id="subType">
+                <option value="new_phrase">New Phrase / Translation</option>
+                <option value="edit_phrase">Suggest Edit to Existing Phrase</option>
+                <option value="term_request">Request Missing Term</option>
+              </select>
+            </label>
+            <div class="two-col">
+              <label>Section
+                <select id="subSection">
+                  <option>I. Anatomy & Positions</option>
+                  <option>II. Rapport & Introduction</option>
+                  <option>III. Biodata</option>
+                  <option>IV. Presenting Complaint</option>
+                  <option>V. Common Diseases & Symptoms</option>
+                  <option>VI. Physiology & Pathology</option>
+                  <option>VII. Past Medical History</option>
+                  <option>VIII. Family History</option>
+                  <option>IX. Social History</option>
+                  <option>X. Pediatric Vocabulary</option>
+                  <option>XI. Vital Signs</option>
+                  <option>XII. Examination Commands</option>
+                  <option>XIII. Post-Assessment Communication</option>
+                  <option>XIV. Addendum</option>
+                </select>
+              </label>
+              <label>Subsection <input type="text" id="subSubsection" placeholder="e.g. A. Parts of the Body" /></label>
+            </div>
+            <label>English Term / Clinical Question * <input type="text" id="subEnglish" required placeholder="e.g. Do you have any questions for me?" /></label>
+            <label>Idoma Translation <input type="text" id="subIdoma" placeholder="Idoma phrasing or dialect variant" /></label>
+            <div class="two-col">
+              <label>Syllable Breakdown <input type="text" id="subSyllables" placeholder="e.g. o-kpe-yi" /></label>
+              <label>Phonetic Hint <input type="text" id="subPhonetic" placeholder="e.g. 'o' as in orange" /></label>
+            </div>
+            <label>Tone / Pitch Note <input type="text" id="subTone" placeholder="Warn if tone distinguishes meaning" /></label>
+            <label>Clinical / Dialect Note <textarea id="subClinical" placeholder="Context, anatomical overlap, or dialect note"></textarea></label>
+            <div class="two-col">
+              <label>Proposed Verification Status
+                <select id="subStatus">
+                  <option value="unconfirmed">Unconfirmed</option>
+                  <option value="verified">Verified</option>
+                  <option value="missing">Missing</option>
+                </select>
+              </label>
+              <label>Variation Of (optional ID) <input type="text" id="subVariationOf" placeholder="Base phrase ID if variant" /></label>
+            </div>
+            <label class="checkbox-row"><input type="checkbox" id="subAllowVar" /> Mark as legitimate dialect/phrasing variation (not a duplicate)</label>
+            <label>Your Name (for term requests) <input type="text" id="subRequester" placeholder="Optional name or role" /></label>
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <h3>Contributor Voice Recorder (Moderated)</h3>
+          <p class="muted small-note">Requires a Contributor or Admin code. Recordings go to Admin review and become available to all users once approved.</p>
+          <form class="stack-form" onsubmit="return false;">
+            <label>Target Phrase
+              <select id="audioPhraseSelect"></select>
+            </label>
+            <label>Dialect / Speaker Note <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo / native speaker verification" /></label>
+            <div class="btn-row">
+              <button type="button" id="recordToggleBtn" class="btn btn-secondary">Record Pronunciation</button>
+              <button type="button" id="saveAudioBtn" class="btn btn-primary" disabled>Submit Clip for Review</button>
+            </div>
+            <p id="recordStateText" class="muted small-note" style="margin-top:8px;">Ready.</p>
+            <audio id="audioPreview" controls class="audio-player" hidden></audio>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. CONTRIBUTORS & CREDITS -->
+    <section id="creditsTab" class="tab-panel" hidden>
+      <div class="panel">
+        <h3>Contributors & Credits</h3>
+        <p class="muted small-note">Written by Alex Sunday Okoh (300-level MBBS student, FUHSO). Credits below sync dynamically from active credited contributors.</p>
+        <div id="creditsGrid" class="credits-grid" style="margin-top:12px;"></div>
+      </div>
+    </section>
+
+    <!-- 6. ADMIN STUDIO -->
+    <section id="adminTab" class="tab-panel" hidden>
+      <div id="adminContent"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./js/config.js"></script>
+  <script src="./js/db.js"></script>
+  <script src="./js/audio-matcher.js"></script>
+  <script src="./js/app.js"></script>
 </body>
 </html>
