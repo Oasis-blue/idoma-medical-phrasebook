@@ -10,7 +10,7 @@
   let trayIds = new Set();
 
   let bedsideMode = false;
-  let alalaOnly = false;
+  let dialectOnly = false;
   let activeSection = "ALL";
   let activeStatus = "ALL";
 
@@ -34,6 +34,15 @@
 
     el.hidden = false;
     el.className = `notice-banner notice-${type}`;
+    // Ensure floating viewport toast even if CSS cache is stale
+    el.style.position = "fixed";
+    el.style.bottom = "18px";
+    el.style.left = "50%";
+    el.style.transform = "translateX(-50%)";
+    el.style.width = "min(560px, calc(100vw - 24px))";
+    el.style.zIndex = "9999";
+    el.style.boxShadow = "0 10px 28px rgba(16, 42, 34, 0.25)";
+
     el.innerHTML = `
       <span>${escapeHtml(msg)}</span>
       <button type="button" class="notice-close-btn" aria-label="Dismiss notification">&times;</button>
@@ -44,7 +53,7 @@
 
     noticeTimer = setTimeout(() => {
       el.hidden = true;
-    }, 5500);
+    }, 6000);
   }
 
   function renderSessionUI() {
@@ -86,6 +95,31 @@
     setTimeout(() => $("accessCodeInput")?.focus(), 120);
   }
 
+  function openVolunteerForm() {
+    switchTab("contributeTab");
+    const subType = $("subType");
+    if (subType) {
+      subType.value = "volunteer_request";
+      toggleSubFormMode();
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => $("volName")?.focus(), 120);
+  }
+
+  function toggleSubFormMode() {
+    const type = $("subType")?.value || "term_request";
+    const isVol = type === "volunteer_request";
+    const volBox = $("volunteerFieldsBox");
+    const phraseBox = $("phraseFieldsBox");
+    const submitBtn = $("subSubmitBtn");
+
+    if (volBox) volBox.hidden = !isVol;
+    if (phraseBox) phraseBox.hidden = isVol;
+    if (submitBtn) {
+      submitBtn.textContent = isVol ? "Submit Volunteer Application" : "Submit Entry";
+    }
+  }
+
   function renderContributeGuestNotice() {
     const tabEl = $("contributeTab");
     if (!tabEl) return;
@@ -99,7 +133,7 @@
       notice.id = "contributeGuestNotice";
       notice.className = "guest-auth-callout";
       notice.innerHTML = `
-        <span><strong>Guest mode:</strong> Request missing clinical terms freely. Contributors and reviewers can sign in with their access code to edit phrases or record voice clips.</span>
+        <span><strong>Guest mode:</strong> Request missing clinical terms or apply to volunteer freely. Already have a contributor code?</span>
         <button type="button" class="btn btn-sm btn-secondary" id="openLoginFromContributeBtn">Contributor Sign In</button>
       `;
       tabEl.prepend(notice);
@@ -132,9 +166,20 @@
     return phrases.filter((p) => {
       if (activeSection !== "ALL" && p.section !== activeSection) return false;
       if (activeStatus !== "ALL" && p.status !== activeStatus) return false;
-      if (alalaOnly && !p.alala) return false;
+      if (dialectOnly && !p.alala && !p.variationLabel) return false;
       if (!q) return true;
-      const hay = [p.english, p.idoma, p.alala, p.syllables, p.phonetic, p.tone, p.clinical, p.section, p.subsection]
+      const hay = [
+        p.english,
+        p.idoma,
+        p.alala,
+        p.variationLabel,
+        p.syllables,
+        p.phonetic,
+        p.tone,
+        p.clinical,
+        p.section,
+        p.subsection
+      ]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
@@ -154,6 +199,8 @@
       ? `<button type="button" class="btn btn-sm btn-primary" data-play-url="${escapeHtml(clip.url)}">Play Audio</button>`
       : `<span class="muted small-note">No audio yet</span>`;
 
+    const variantTag = p.variationLabel || "Alala (Orokam)";
+
     return `
       <article class="phrase-card status-${escapeHtml(p.status)} ${bedsideMode ? "bedside-card" : ""}">
         <div>
@@ -168,7 +215,7 @@
           </div>
           ${p.alala ? `
             <div class="alala-row">
-              <span class="alala-tag">Alala (Orokam)</span>
+              <span class="alala-tag">${escapeHtml(variantTag)}</span>
               <strong>${escapeHtml(p.alala)}</strong>
             </div>
           ` : ""}
@@ -216,6 +263,7 @@
         if (!target) return;
         switchTab("contributeTab");
         $("subType").value = "edit_phrase";
+        toggleSubFormMode();
         $("subTargetId").value = target.id;
         $("subSection").value = target.section;
         $("subSubsection").value = target.subsection || "";
@@ -263,7 +311,10 @@
         `;
         $("openRequestFromFallback")?.addEventListener("click", () => {
           if ($("subEnglish")) $("subEnglish").value = q;
-          if ($("subType")) $("subType").value = "term_request";
+          if ($("subType")) {
+            $("subType").value = "term_request";
+            toggleSubFormMode();
+          }
           switchTab("contributeTab");
           window.scrollTo({ top: 0, behavior: "smooth" });
         });
@@ -336,7 +387,8 @@
     const clip = audioMap[item.id];
     const isReverse = practiceDirection === "id_to_en";
 
-    const primaryIdoma = item.idoma || `${item.alala} (Alala)`;
+    const variantTag = item.variationLabel || "Alala (Orokam)";
+    const primaryIdoma = item.idoma || `${item.alala} (${variantTag})`;
     const promptText = isReverse ? primaryIdoma : item.english;
     const answerText = isReverse ? item.english : primaryIdoma;
 
@@ -351,7 +403,7 @@
       ${practiceRevealed ? `
         <div class="reveal-box">
           <div class="idoma-term" style="font-size:1.25rem;">${escapeHtml(answerText)}</div>
-          ${item.idoma && item.alala ? `<div class="alala-row" style="margin-top:8px;"><span class="alala-tag">Alala (Orokam)</span><strong>${escapeHtml(item.alala)}</strong></div>` : ""}
+          ${item.idoma && item.alala ? `<div class="alala-row" style="margin-top:8px;"><span class="alala-tag">${escapeHtml(variantTag)}</span><strong>${escapeHtml(item.alala)}</strong></div>` : ""}
           ${!isReverse && item.syllables ? `<div class="meta-line"><strong>Syllables:</strong> <code>${escapeHtml(item.syllables)}</code></div>` : ""}
           ${item.phonetic ? `<div class="meta-line"><strong>Pronunciation:</strong> ${escapeHtml(item.phonetic)}</div>` : ""}
           ${item.tone ? `<div class="tone-alert">${escapeHtml(item.tone)}</div>` : ""}
@@ -432,7 +484,7 @@
     const sel = $("audioPhraseSelect");
     if (!sel) return;
     sel.innerHTML = phrases
-      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Alala)" : " [Blank]")}</option>`)
+      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Variant)" : " [Blank]")}</option>`)
       .join("");
   }
 
@@ -447,7 +499,9 @@
     container.innerHTML = "<p class='muted'>Loading moderation queues...</p>";
     try {
       const data = await DB.adminGetData(session);
-      const pendingSubs = data.submissions.filter((s) => s.review_status === "pending");
+      const pendingAll = data.submissions.filter((s) => s.review_status === "pending");
+      const pendingVols = pendingAll.filter((s) => s.section === "Volunteer Application" || s.submission_type === "volunteer_request");
+      const pendingSubs = pendingAll.filter((s) => s.section !== "Volunteer Application" && s.submission_type !== "volunteer_request");
       const pendingAudio = data.audioClips.filter((a) => a.approval_status === "pending");
 
       container.innerHTML = `
@@ -455,7 +509,7 @@
           <div class="panel-header-row">
             <div>
               <h3>Database Seed Sync (${seedPhrases.length} entries in seed-phrases.json)</h3>
-              <p class="muted small-note">Import or update all entries from <code>data/seed-phrases.json</code> (including Alala Orokam dialect entries) into your live Supabase table so contributors can attach audio clips and edits.</p>
+              <p class="muted small-note">Import or update all entries from <code>data/seed-phrases.json</code> into your live Supabase table so contributors can attach audio clips and edits.</p>
             </div>
             <button type="button" class="btn btn-primary" id="importSeedBtn">Import / Sync Seed JSON to DB</button>
           </div>
@@ -513,8 +567,26 @@
           </section>
 
           <section class="panel">
-            <h3>2. Pending Phrase Edits & Term Requests (${pendingSubs.length})</h3>
-            ${pendingSubs.length === 0 ? "<p class='muted'>No pending phrase submissions.</p>" : pendingSubs.map((s) => `
+            <h3>2. Volunteer Applications (${pendingVols.length})</h3>
+            ${pendingVols.length === 0 ? "<p class='muted small-note'>No pending volunteer applications.</p>" : pendingVols.map((v) => `
+              <div class="mod-item">
+                <div class="card-top">
+                  <span class="sec-tag">Volunteer Request</span>
+                  <span class="muted small-note">${escapeHtml(v.requester_label || "")}</span>
+                </div>
+                <strong>Applicant:</strong> ${escapeHtml(v.english_term)}<br/>
+                ${v.alala_term ? `<strong>Dialects:</strong> ${escapeHtml(v.alala_term)}<br/>` : ""}
+                ${v.clinical_note ? `<strong>Details:</strong> ${escapeHtml(v.clinical_note)}<br/>` : ""}
+                <div class="btn-row">
+                  <button type="button" class="btn btn-sm btn-primary" data-prefill-vol="${escapeHtml(v.id)}">Issue Code in Form</button>
+                  <button type="button" class="btn btn-sm btn-secondary" data-sub-action="approved" data-sub-id="${escapeHtml(v.id)}">Mark Handled</button>
+                  <button type="button" class="btn btn-sm btn-danger" data-sub-action="rejected" data-sub-id="${escapeHtml(v.id)}">Decline</button>
+                </div>
+              </div>
+            `).join("")}
+
+            <h3 class="mt-lg">3. Pending Phrase Edits & Term Requests (${pendingSubs.length})</h3>
+            ${pendingSubs.length === 0 ? "<p class='muted small-note'>No pending phrase submissions.</p>" : pendingSubs.map((s) => `
               <div class="mod-item">
                 <div class="card-top">
                   <span class="sec-tag">${escapeHtml(s.submission_type)} · ${escapeHtml(s.section)}</span>
@@ -522,7 +594,7 @@
                 </div>
                 <strong>English:</strong> ${escapeHtml(s.english_term)}<br/>
                 ${s.idoma_term ? `<strong>Idoma:</strong> ${escapeHtml(s.idoma_term)}<br/>` : ""}
-                ${s.alala_term ? `<strong>Alala (Orokam):</strong> ${escapeHtml(s.alala_term)}<br/>` : ""}
+                ${s.alala_term ? `<strong>Dialect Variant:</strong> ${escapeHtml(s.alala_term)}<br/>` : ""}
                 ${s.clinical_note ? `<strong>Notes:</strong> ${escapeHtml(s.clinical_note)}<br/>` : ""}
                 <div class="btn-row">
                   <button type="button" class="btn btn-sm btn-primary" data-sub-action="approved" data-sub-id="${escapeHtml(s.id)}">Approve & Publish</button>
@@ -531,8 +603,8 @@
               </div>
             `).join("")}
 
-            <h3 class="mt-lg">3. Pending Audio Clips (${pendingAudio.length})</h3>
-            ${pendingAudio.length === 0 ? "<p class='muted'>No pending voice clips.</p>" : pendingAudio.map((a) => {
+            <h3 class="mt-lg">4. Pending Audio Clips (${pendingAudio.length})</h3>
+            ${pendingAudio.length === 0 ? "<p class='muted small-note'>No pending voice clips.</p>" : pendingAudio.map((a) => {
               const phrase = phrases.find((p) => String(p.id) === String(a.phrase_id));
               let src = a.data_url || "";
               if (!src && DB.isLive() && window.APP_CONFIG?.SUPABASE_URL) {
@@ -605,6 +677,25 @@
       $("cResetBtn")?.addEventListener("click", () => {
         $("cId").value = "";
         $("contribForm")?.reset();
+      });
+
+      container.querySelectorAll("[data-prefill-vol]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const v = pendingVols.find((x) => x.id === btn.getAttribute("data-prefill-vol"));
+          if (!v) return;
+          const cleanName = (v.english_term || "").replace(/^Volunteer:\s*/i, "").trim();
+          const firstToken = (cleanName.split(/\s+/)[0] || "USER").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          $("cId").value = "";
+          $("cName").value = cleanName;
+          $("cRole").value = v.subsection || "Dialect & Translation Contributor";
+          $("cCode").value = `CONT-${firstToken}-${Math.floor(10 + Math.random() * 89)}`;
+          $("cNotes").value = [v.alala_term, v.requester_label].filter(Boolean).join(" · ");
+          $("cIsAdmin").checked = false;
+          $("cShowCredits").checked = true;
+          $("cIsActive").checked = true;
+          setStatusBanner("Applicant details prefilled in Contributor Form—review code and click Save Contributor.", "info");
+          $("cCode")?.focus();
+        });
       });
 
       container.querySelectorAll("[data-edit-c]").forEach((btn) => {
@@ -683,7 +774,10 @@
     });
     if (tabId === "trayTab") renderTray();
     if (tabId === "practiceTab") renderPracticeCard();
-    if (tabId === "contributeTab") renderContributeGuestNotice();
+    if (tabId === "contributeTab") {
+      renderContributeGuestNotice();
+      toggleSubFormMode();
+    }
     if (tabId === "aboutTab") renderCredits();
     if (tabId === "adminTab") renderAdminDashboard();
   }
@@ -706,6 +800,8 @@
     });
 
     $("footerLoginTrigger")?.addEventListener("click", openLoginBox);
+    $("footerVolunteerBtn")?.addEventListener("click", openVolunteerForm);
+    $("aboutVolunteerBtn")?.addEventListener("click", openVolunteerForm);
     $("footerAboutBtn")?.addEventListener("click", () => {
       switchTab("aboutTab");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -715,6 +811,8 @@
       renderSessionUI();
     });
 
+    $("subType")?.addEventListener("change", toggleSubFormMode);
+
     $("searchInput")?.addEventListener("input", renderPhrases);
     $("statusFilter")?.addEventListener("change", (e) => {
       activeStatus = e.target.value;
@@ -722,8 +820,8 @@
     });
 
     $("alalaFilterBtn")?.addEventListener("click", () => {
-      alalaOnly = !alalaOnly;
-      $("alalaFilterBtn").classList.toggle("is-active", alalaOnly);
+      dialectOnly = !dialectOnly;
+      $("alalaFilterBtn").classList.toggle("is-active", dialectOnly);
       renderPhrases();
     });
 
@@ -737,7 +835,10 @@
     });
 
     $("quickRequestBtn")?.addEventListener("click", () => {
-      if ($("subType")) $("subType").value = "term_request";
+      if ($("subType")) {
+        $("subType").value = "term_request";
+        toggleSubFormMode();
+      }
       switchTab("contributeTab");
     });
 
@@ -777,10 +878,49 @@
     $("phraseSubForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        const rawType = $("subType").value;
+
+        // Handle Volunteer Application via open term_request pipeline
+        if (rawType === "volunteer_request") {
+          const volName = $("volName")?.value.trim();
+          const volContact = $("volContact")?.value.trim();
+          const volDialects = $("volDialects")?.value.trim();
+          const volRole = $("volRole")?.value || "Translation & Dialect Contributor";
+          const volNotes = $("volNotes")?.value.trim() || "";
+
+          if (!volName || !volContact || !volDialects) {
+            throw new Error("Please provide your name, phone/WhatsApp contact, and dialect(s).");
+          }
+
+          await DB.submitPhraseOrRequest({
+            submission_type: "term_request",
+            section: "Volunteer Application",
+            subsection: volRole,
+            english_term: `Volunteer: ${volName}`,
+            alala_term: `Dialects: ${volDialects}`,
+            clinical_note: `Role: ${volRole} | Contact: ${volContact}${volNotes ? " | Notes: " + volNotes : ""}`,
+            proposed_status: "unconfirmed",
+            requester_label: `${volName} (${volContact})`
+          }, null);
+
+          $("phraseSubForm").reset();
+          $("subType").value = "volunteer_request";
+          toggleSubFormMode();
+          setStatusBanner("Volunteer application received! The Admin team will review and send your contributor access code.", "success");
+          if (session && session.is_admin) await renderAdminDashboard();
+          return;
+        }
+
         const englishVal = $("subEnglish").value.trim();
         if (!englishVal) throw new Error("English term or question is required.");
 
-        const subType = session ? $("subType").value : "term_request";
+        const subType = session ? rawType : "term_request";
+        const dialectLabel = $("subDialectLabel")?.value || "";
+        const rawClinical = $("subClinical").value.trim();
+        const combinedClinical = dialectLabel && $("subAlala")?.value.trim()
+          ? `[${dialectLabel} Variant] ${rawClinical}`.trim()
+          : rawClinical;
+
         await DB.submitPhraseOrRequest({
           submission_type: subType,
           target_phrase_id: subType === "edit_phrase" ? ($("subTargetId").value || null) : null,
@@ -794,13 +934,14 @@
           syllables: $("subSyllables").value.trim(),
           phonetic_hint: $("subPhonetic").value.trim(),
           tone_note: $("subTone").value.trim(),
-          clinical_note: $("subClinical").value.trim(),
+          clinical_note: combinedClinical,
           proposed_status: $("subStatus").value,
           requester_label: $("subRequester")?.value.trim() || "Public user"
         }, session);
 
         $("phraseSubForm").reset();
         $("subTargetId").value = "";
+        toggleSubFormMode();
         setStatusBanner(
           session
             ? "Submitted to the moderation queue for Admin approval."
@@ -815,6 +956,10 @@
 
     $("recordToggleBtn")?.addEventListener("click", async () => {
       try {
+        if (!session) {
+          setStatusBanner("Sign in with a contributor or admin access code to record and submit audio.", "warn");
+          return;
+        }
         if (!isRecording) {
           recordedDraft = null;
           $("saveAudioBtn").disabled = true;
@@ -841,6 +986,10 @@
 
     $("saveAudioBtn")?.addEventListener("click", async () => {
       try {
+        if (!session) {
+          setStatusBanner("Sign in with a contributor or admin access code to submit audio.", "warn");
+          return;
+        }
         if (!recordedDraft) throw new Error("Record a voice clip first.");
         await DB.uploadAudioRecording({
           phraseId: $("audioPhraseSelect").value,
@@ -928,6 +1077,7 @@
 
   async function init() {
     bindEvents();
+    toggleSubFormMode();
     DB.initClient();
     session = DB.getSavedSession();
     trayIds = DB.getTrayIds();
