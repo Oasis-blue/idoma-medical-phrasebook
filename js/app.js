@@ -859,8 +859,27 @@
           const rec = await Matcher.stopRecording();
           isRecording = false;
           $("listenRecordBtn").textContent = "Listen for Best Match";
-          $("listenStatus").textContent = "Candidate matches (unverified acoustic match — confirm directly with patient):";
           const matches = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+
+          if (!matches || matches.length === 0) {
+            const hasAnyAudio = Object.keys(audioMap).length > 0;
+            $("listenStatus").textContent = "";
+            $("listenMatches").innerHTML = `
+              <div class="match-card">
+                <div>
+                  <strong>No reliable match found</strong>
+                  <div class="muted small-note">
+                    ${hasAnyAudio
+                      ? "The patient's response did not closely match any recorded phrase (or background ward noise interfered). Try asking again closer to the mic, or use the response cards."
+                      : "No approved contributor audio clips are available yet to compare against."}
+                  </div>
+                </div>
+              </div>
+            `;
+            return;
+          }
+
+          $("listenStatus").textContent = "Candidate matches (unverified acoustic match — confirm directly with patient):";
           $("listenMatches").innerHTML = matches.map((m) => `
             <div class="match-card">
               <div>
