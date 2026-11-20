@@ -166,25 +166,28 @@
       }
     }
 
-    scored.sort((a, b) => a.dist - b.dist);
+        scored.sort((a, b) => a.dist - b.dist);
     if (scored.length === 0) return [];
 
-    // Convert relative DTW distances into intuitive confidence percentages
-    const bestDist = scored[0].dist || 0.1;
-    return scored.slice(0, 3).map((item) => {
-      const ratio = bestDist / Math.max(item.dist, 0.001);
-      const confidence = Math.max(25, Math.min(96, Math.round(ratio * 88)));
-      return {
-        phrase: item.phrase,
-        confidence,
-        hasAudio: true
-      };
-    });
-  }
+    // Reject if the patient audio was too short/silent or acoustically far from all clips
+    const MAX_ACCEPTABLE_DIST = 1.65;
+    if (patientFrames.length < 3 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
+      return [];
+    }
 
-  window.AudioMatcher = {
-    startRecording,
-    stopRecording,
-    matchPatientSpeech
-  };
-})();
+    // Score based on both absolute acoustic closeness and relative separation
+    const bestDist = scored[0].dist;
+    return scored
+      .filter((item) => item.dist <= MAX_ACCEPTABLE_DIST)
+      .slice(0, 3)
+      .map((item) => {
+        const absScore = Math.max(0, 1 - item.dist / (MAX_ACCEPTABLE_DIST * 1.15));
+        const relScore = bestDist / Math.max(item.dist, 0.001);
+        const confidence = Math.max(30, Math.min(95, Math.round((absScore * 0.55 + relScore * 0.45) * 100)));
+        return {
+          phrase: item.phrase,
+          confidence,
+          hasAudio: true
+        };
+      });
+  }
