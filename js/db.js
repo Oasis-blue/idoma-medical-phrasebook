@@ -1,10 +1,11 @@
 (function () {
   const LOCAL_KEYS = {
-    phrases: "idoma_pb_phrases_v1",
-    contributors: "idoma_pb_contributors_v1",
-    submissions: "idoma_pb_submissions_v1",
-    audio: "idoma_pb_audio_v1",
-    session: "idoma_pb_session_v1"
+    phrases: "idoma_pb_phrases_v2",
+    contributors: "idoma_pb_contributors_v2",
+    submissions: "idoma_pb_submissions_v2",
+    audio: "idoma_pb_audio_v2",
+    session: "idoma_pb_session_v1",
+    tray: "idoma_pb_tray_v1"
   };
 
   const DEFAULT_CONTRIBUTORS = [
@@ -12,7 +13,8 @@
     { id: "c-grace", full_name: "Grace Adini", role_title: "Translation", access_code: "CONT-GRACE-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Translation contributor" },
     { id: "c-ben", full_name: "Ben Odeh", role_title: "Dialect review", access_code: "CONT-BEN-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Dialect review contributor" },
     { id: "c-jude", full_name: "Dr Jude A", role_title: "Clinical accuracy review", access_code: "CONT-JUDE-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Clinical accuracy reviewer" },
-    { id: "c-james", full_name: "James Gabriel", role_title: "Proofreading", access_code: "CONT-JAMES-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Proofreading contributor" }
+    { id: "c-james", full_name: "James Gabriel", role_title: "Proofreading", access_code: "CONT-JAMES-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Proofreading contributor" },
+    { id: "c-peace", full_name: "Peace Onogwu", role_title: "Alala (Orokam) translation", access_code: "CONT-PEACE-01", is_admin: false, show_in_credits: true, is_active: true, daily_submission_limit: 50, daily_audio_limit: 50, notes: "Alala (Orokam) dialect contributor" }
   ];
 
   let supabaseClient = null;
@@ -48,20 +50,12 @@
     }
   }
 
-  async function loadSeedPhrases() {
-    try {
-      const res = await fetch("./data/seed-phrases.json", { cache: "no-store" });
-      if (!res.ok) throw new Error("Seed JSON fetch failed");
-      const data = await res.json();
-      return Array.isArray(data) ? data.map((item, idx) => normalizePhrase({ ...item, id: item.id || `seed-${idx + 1}`, sort_order: idx + 1 })) : [];
-    } catch (e) {
-      console.warn("Using inline fallback seed:", e);
-      return [
-        normalizePhrase({ id: "fb-1", code: "RAP_01", section: "II. Rapport & Introduction", subsection: "Greetings & Rapport", english: "Good morning", idoma: "Nmaochi", syllables: "n-ma-o-chi", phonetic: "uma ochi", tone: "", clinical: "", status: "verified" }),
-        normalizePhrase({ id: "fb-2", code: "RAP_07", section: "II. Rapport & Introduction", subsection: "Greetings & Rapport", english: "I want to examine you.", idoma: "Ndoko jilo", syllables: "n-do-ko ji-lo", phonetic: "Ndoko pronounced 'ndor-ko'", tone: "", clinical: "", status: "verified" }),
-        normalizePhrase({ id: "fb-3", code: "SYM_04", section: "V. Common Diseases & Symptoms", subsection: "General Symptoms", english: "Fever", idoma: "Oha ola / Osaola / iba", syllables: "o-ha o-la / o-sa-o-la / i-ba", phonetic: "", tone: "", clinical: "", status: "verified" })
-      ];
-    }
+  function getTrayIds() {
+    return new Set(readLocal(LOCAL_KEYS.tray, []));
+  }
+
+  function saveTrayIds(setObj) {
+    writeLocal(LOCAL_KEYS.tray, Array.from(setObj));
   }
 
   function normalizePhrase(p) {
@@ -72,15 +66,30 @@
       subsection: p.subsection || "",
       english: p.english || p.english_term || "",
       idoma: p.idoma ?? p.idoma_term ?? "",
+      alala: p.alala ?? p.alala_term ?? "",
       syllables: p.syllables || "",
       phonetic: p.phonetic || p.phonetic_hint || "",
       tone: p.tone || p.tone_note || "",
       clinical: p.clinical || p.clinical_note || "",
-      status: p.status || p.verification_status || (p.idoma ? "unconfirmed" : "missing"),
+      status: p.status || p.verification_status || ((p.idoma || p.alala) ? "unconfirmed" : "missing"),
       variation_of_id: p.variation_of_id || null,
       variation_label: p.variation_label || "",
       sort_order: p.sort_order ?? 0
     };
+  }
+
+  async function loadSeedPhrases() {
+    try {
+      const res = await fetch("./data/seed-phrases.json", { cache: "no-store" });
+      if (!res.ok) throw new Error("Seed JSON fetch failed");
+      const data = await res.json();
+      return Array.isArray(data)
+        ? data.map((item, idx) => normalizePhrase({ ...item, id: item.id || `seed-${idx + 1}`, sort_order: idx + 1 }))
+        : [];
+    } catch (e) {
+      console.warn("Seed fetch fallback:", e);
+      return [];
+    }
   }
 
   function ensureLocalStore(seedList) {
@@ -130,7 +139,7 @@
   }
 
   async function fetchApprovedAudioMap() {
-    const map = {}; // phrase_id -> { url, dialect_note, contributor }
+    const map = {};
     if (isLiveDb && supabaseClient) {
       const { data, error } = await supabaseClient
         .from("audio_clips")
@@ -172,9 +181,7 @@
   async function fetchPublicCredits() {
     if (isLiveDb && supabaseClient) {
       const { data, error } = await supabaseClient.rpc("get_public_credits");
-      if (!error && Array.isArray(data)) {
-        return data;
-      }
+      if (!error && Array.isArray(data)) return data;
     }
     const contribs = readLocal(LOCAL_KEYS.contributors, DEFAULT_CONTRIBUTORS);
     return contribs.filter((c) => c.is_active !== false && c.show_in_credits !== false);
@@ -204,7 +211,7 @@
 
     const contribs = readLocal(LOCAL_KEYS.contributors, DEFAULT_CONTRIBUTORS);
     const match = contribs.find((c) => c.access_code === clean && c.is_active !== false);
-    if (!match) throw new Error("Code not found. Try ADMIN-FUHSO-01 or CONT-GRACE-01 in offline mode.");
+    if (!match) throw new Error("Code not found.");
     const session = { ...match };
     writeLocal(LOCAL_KEYS.session, session);
     return session;
@@ -233,6 +240,7 @@
         p_subsection: payload.subsection || null,
         p_english_term: payload.english_term,
         p_idoma_term: payload.idoma_term || null,
+        p_alala_term: payload.alala_term || null,
         p_syllables: payload.syllables || null,
         p_phonetic_hint: payload.phonetic_hint || null,
         p_tone_note: payload.tone_note || null,
@@ -260,7 +268,6 @@
       return data;
     }
 
-    // Local fallback
     const subs = readLocal(LOCAL_KEYS.submissions, []);
     const newSub = {
       id: "sub-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
@@ -272,6 +279,7 @@
       subsection: payload.subsection || "",
       english_term: payload.english_term,
       idoma_term: payload.idoma_term || "",
+      alala_term: payload.alala_term || "",
       syllables: payload.syllables || "",
       phonetic_hint: payload.phonetic_hint || "",
       tone_note: payload.tone_note || "",
@@ -300,9 +308,7 @@
     if (!session || !session.access_code) {
       throw new Error("Sign in with a contributor or admin access code to record and submit audio.");
     }
-    if (!phraseId) {
-      throw new Error("Select a phrase before recording audio.");
-    }
+    if (!phraseId) throw new Error("Select a phrase before recording audio.");
 
     if (isLiveDb && supabaseClient) {
       const bucket = (window.APP_CONFIG && window.APP_CONFIG.AUDIO_BUCKET) || "idoma-audio";
@@ -327,7 +333,6 @@
       return data;
     }
 
-    // Local fallback
     const dataUrl = await blobToDataUrl(blob);
     const clips = readLocal(LOCAL_KEYS.audio, []);
     const clip = {
@@ -350,7 +355,6 @@
 
   async function adminGetData(session) {
     if (!session || !session.is_admin) throw new Error("Admin access required.");
-
     if (isLiveDb && supabaseClient) {
       const [cRes, sRes, aRes] = await Promise.all([
         supabaseClient.rpc("admin_list_contributors", { p_admin_code: session.access_code }),
@@ -455,6 +459,7 @@
             subsection: sub.subsection || localPhrases[idx].subsection,
             english: sub.english_term || localPhrases[idx].english,
             idoma: sub.idoma_term ?? localPhrases[idx].idoma,
+            alala: sub.alala_term ?? localPhrases[idx].alala,
             syllables: sub.syllables ?? localPhrases[idx].syllables,
             phonetic: sub.phonetic_hint ?? localPhrases[idx].phonetic,
             tone: sub.tone_note ?? localPhrases[idx].tone,
@@ -469,6 +474,7 @@
           subsection: sub.subsection || "",
           english: sub.english_term,
           idoma: sub.idoma_term || "",
+          alala: sub.alala_term || "",
           syllables: sub.syllables || "",
           phonetic: sub.phonetic_hint || "",
           tone: sub.tone_note || "",
@@ -520,6 +526,7 @@
         p_subsection: phraseObj.subsection || null,
         p_english_term: phraseObj.english,
         p_idoma_term: phraseObj.idoma || null,
+        p_alala_term: phraseObj.alala || null,
         p_syllables: phraseObj.syllables || null,
         p_phonetic_hint: phraseObj.phonetic || null,
         p_tone_note: phraseObj.tone || null,
@@ -539,6 +546,17 @@
     return norm;
   }
 
+  async function adminImportSeedBatch(session, seedList, onProgress) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    let done = 0;
+    for (const item of seedList) {
+      await adminUpsertPhrase(session, item, seedList);
+      done += 1;
+      if (typeof onProgress === "function") onProgress(done, seedList.length);
+    }
+    return done;
+  }
+
   window.PhraseDB = {
     initClient,
     isLive: () => isLiveDb,
@@ -549,6 +567,8 @@
     loginWithCode,
     getSavedSession,
     clearSavedSession,
+    getTrayIds,
+    saveTrayIds,
     submitPhraseOrRequest,
     uploadAudioRecording,
     adminGetData,
@@ -556,6 +576,7 @@
     adminDeleteContributor,
     adminReviewSubmission,
     adminReviewAudioClip,
-    adminUpsertPhrase
+    adminUpsertPhrase,
+    adminImportSeedBatch
   };
 })();
