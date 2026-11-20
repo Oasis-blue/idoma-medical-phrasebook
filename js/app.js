@@ -34,7 +34,6 @@
 
     el.hidden = false;
     el.className = `notice-banner notice-${type}`;
-    // Ensure floating viewport toast even if CSS cache is stale
     el.style.position = "fixed";
     el.style.bottom = "18px";
     el.style.left = "50%";
@@ -54,6 +53,55 @@
     noticeTimer = setTimeout(() => {
       el.hidden = true;
     }, 6000);
+  }
+
+  function renderContributorQuickBar() {
+    const mainWrap = document.querySelector(".main-wrap");
+    if (!mainWrap) return;
+    let bar = $("contributorQuickBar");
+
+    if (!session) {
+      if (bar) bar.hidden = true;
+      return;
+    }
+
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "contributorQuickBar";
+      bar.className = "guest-auth-callout";
+      bar.style.borderColor = "var(--accent)";
+      mainWrap.prepend(bar);
+    }
+
+    bar.hidden = false;
+    bar.innerHTML = `
+      <span><strong>Signed in as ${escapeHtml(session.full_name)}</strong> · Quick actions:</span>
+      <div class="btn-row" style="margin-top:0; gap:6px;">
+        <button type="button" class="btn btn-sm btn-primary" id="qbAddPhraseBtn">+ Add Phrase / Variant</button>
+        <button type="button" class="btn btn-sm btn-secondary" id="qbRecordAudioBtn">Record Audio</button>
+        ${session.is_admin ? `<button type="button" class="btn btn-sm btn-secondary" id="qbAdminQueueBtn">Moderation Queue</button>` : ""}
+      </div>
+    `;
+
+    $("qbAddPhraseBtn")?.addEventListener("click", () => {
+      switchTab("contributeTab");
+      if ($("subType")) {
+        $("subType").value = "new_phrase";
+        toggleSubFormMode();
+      }
+      $("subEnglish")?.focus();
+    });
+
+    $("qbRecordAudioBtn")?.addEventListener("click", () => {
+      switchTab("contributeTab");
+      const recBtn = $("recordToggleBtn");
+      recBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => recBtn?.focus(), 200);
+    });
+
+    $("qbAdminQueueBtn")?.addEventListener("click", () => {
+      switchTab("adminTab");
+    });
   }
 
   function renderSessionUI() {
@@ -77,7 +125,9 @@
       if (headerAuthBox) headerAuthBox.hidden = true;
       if (adminTab) adminTab.hidden = true;
     }
+    renderContributorQuickBar();
     renderContributeGuestNotice();
+    renderPhrases();
   }
 
   function openLoginBox() {
@@ -228,7 +278,10 @@
           <button type="button" class="btn btn-sm ${isPinned ? "btn-pinned" : "btn-secondary"}" data-pin-id="${escapeHtml(p.id)}">
             ${isPinned ? "Pinned in Tray" : "+ Pin to Tray"}
           </button>
-          <button type="button" class="btn btn-sm btn-ghost" data-suggest-edit="${escapeHtml(p.id)}">Edit / Record</button>
+          <div style="display:flex; gap:6px;">
+            ${session ? `<button type="button" class="btn btn-sm btn-secondary" data-record-phrase="${escapeHtml(p.id)}">Record Audio</button>` : ""}
+            <button type="button" class="btn btn-sm btn-ghost" data-suggest-edit="${escapeHtml(p.id)}">Edit</button>
+          </div>
         </div>
       </article>
     `;
@@ -253,6 +306,17 @@
         updateTrayBadge();
         renderPhrases();
         renderTray();
+      });
+    });
+
+    container.querySelectorAll("[data-record-phrase]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = String(btn.getAttribute("data-record-phrase"));
+        switchTab("contributeTab");
+        if ($("audioPhraseSelect")) $("audioPhraseSelect").value = id;
+        const recBtn = $("recordToggleBtn");
+        recBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => recBtn?.focus(), 200);
       });
     });
 
@@ -880,7 +944,6 @@
       try {
         const rawType = $("subType").value;
 
-        // Handle Volunteer Application via open term_request pipeline
         if (rawType === "volunteer_request") {
           const volName = $("volName")?.value.trim();
           const volContact = $("volContact")?.value.trim();
