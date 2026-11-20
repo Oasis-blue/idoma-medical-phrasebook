@@ -32,7 +32,6 @@
     });
   }
 
-  // Decode any audio Blob into a normalized mono Float32Array (16kHz target)
   async function decodeAndTrim(blob) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const ctx = new AudioCtx();
@@ -41,7 +40,6 @@
       const audioBuf = await ctx.decodeAudioData(arrayBuf);
       const raw = audioBuf.getChannelData(0);
 
-      // Trim leading & trailing silence so word alignment is tight
       const threshold = 0.015;
       let start = 0;
       let end = raw.length - 1;
@@ -51,7 +49,6 @@
       const trimmed = raw.slice(Math.max(0, start - 800), Math.min(raw.length, end + 800));
       if (trimmed.length < 400) return raw;
 
-      // Peak-normalize volume so soft-spoken patients match loud recordings
       let maxAmp = 0;
       for (let i = 0; i < trimmed.length; i++) {
         const a = Math.abs(trimmed[i]);
@@ -66,7 +63,6 @@
     }
   }
 
-  // Extract 12-band log-mel energy frames (lightweight MFCC-style spectral envelope)
   function extractSpectralFrames(samples, sampleRate = 44100) {
     const frameSize = 1024;
     const hopSize = 512;
@@ -74,10 +70,8 @@
     const frames = [];
 
     for (let offset = 0; offset + frameSize <= samples.length; offset += hopSize) {
-      // Apply Hamming window & compute energy in log-spaced frequency bands
       const bandEnergies = new Float32Array(numBands);
       for (let b = 0; b < numBands; b++) {
-        // Goertzel-like bin sampling across vocal formant range (120Hz - 3800Hz)
         const freq = 120 * Math.pow(32, b / (numBands - 1));
         const k = Math.round((frameSize * freq) / sampleRate);
         const w = (2 * Math.PI * k) / frameSize;
@@ -96,7 +90,6 @@
         bandEnergies[b] = Math.log10(1 + Math.sqrt(real * real + imag * imag));
       }
 
-      // Normalize frame vector (cepstral mean subtraction per frame)
       let mean = 0;
       for (let b = 0; b < numBands; b++) mean += bandEnergies[b];
       mean /= numBands;
@@ -107,7 +100,6 @@
     return frames;
   }
 
-  // Dynamic Time Warping distance between two frame sequences
   function dtwDistance(seqA, seqB) {
     const n = seqA.length;
     const m = seqB.length;
@@ -133,7 +125,6 @@
     return dp[n][m] / (n + m);
   }
 
-  // Cache reference fingerprints in memory so repeated ward queries are instant
   const refFingerprintCache = new Map();
 
   async function getReferenceFrames(phraseId, audioUrl) {
@@ -166,16 +157,14 @@
       }
     }
 
-        scored.sort((a, b) => a.dist - b.dist);
+    scored.sort((a, b) => a.dist - b.dist);
     if (scored.length === 0) return [];
 
-    // Reject if the patient audio was too short/silent or acoustically far from all clips
     const MAX_ACCEPTABLE_DIST = 1.65;
     if (patientFrames.length < 3 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
       return [];
     }
 
-    // Score based on both absolute acoustic closeness and relative separation
     const bestDist = scored[0].dist;
     return scored
       .filter((item) => item.dist <= MAX_ACCEPTABLE_DIST)
@@ -191,3 +180,10 @@
         };
       });
   }
+
+  window.AudioMatcher = {
+    startRecording,
+    stopRecording,
+    matchPatientSpeech
+  };
+})();
