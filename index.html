@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Idoma Medical Clinical Phrasebook | Bedside Communication Companion</title>
-  <meta name="description" content="Clinical English-to-Idoma & Alala (Orokam) medical phrasebook with tone warnings, syllable breakdowns, approved audio pronunciation, and bedside communication tools." />
+  <meta name="description" content="Clinical English-to-Idoma & dialect medical phrasebook with tone warnings, syllable breakdowns, approved audio pronunciation, and bedside communication tools." />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Crect x='13.75' y='6.5' width='4.5' height='19' rx='1.5' fill='white'/%3E%3Crect x='6.5' y='13.75' width='19' height='4.5' rx='1.5' fill='white'/%3E%3Cpath d='M23.5 9.2A9.5 9.5 0 0 1 26.2 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M8.5 22.8A9.5 9.5 0 0 1 5.8 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./css/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -36,9 +36,9 @@
         <div>
           <div class="brand-title-row">
             <h1 class="site-title">Idoma Medical Clinical Phrasebook</h1>
-            <span class="version-pill">FUHSO · Otukpo &amp; Alala</span>
+            <span class="version-pill">FUHSO · Otukpo &amp; Dialects</span>
           </div>
-          <p class="subtitle">English ↔ Idoma &amp; Alala (Orokam) bedside history-taking, tone guide &amp; pronunciation</p>
+          <p class="subtitle">English ↔ Idoma &amp; regional dialects bedside history-taking, tone guide &amp; pronunciation</p>
         </div>
       </div>
 
@@ -64,7 +64,8 @@
   </header>
 
   <main class="container main-wrap">
-    <div id="systemNotice" class="notice-banner" hidden></div>
+    <!-- Floating Toast Notification -->
+    <div id="systemNotice" class="notice-banner" role="status" aria-live="polite" hidden></div>
 
     <!-- Navigation Tabs -->
     <nav class="tabs-nav" aria-label="Main Sections">
@@ -72,7 +73,7 @@
       <button type="button" class="tab-btn" data-tab="trayTab">Bedside Tray <span id="trayCountBadge" class="count-badge">0</span></button>
       <button type="button" class="tab-btn" data-tab="practiceTab">Pronunciation &amp; Recall</button>
       <button type="button" class="tab-btn" data-tab="listenTab">Listen &amp; Point</button>
-      <button type="button" class="tab-btn" data-tab="contributeTab">Contribute / Request</button>
+      <button type="button" class="tab-btn" data-tab="contributeTab">Contribute / Volunteer</button>
       <button type="button" class="tab-btn" data-tab="aboutTab">Guide &amp; Credits</button>
       <button type="button" class="tab-btn" data-tab="adminTab" hidden>Admin Studio</button>
     </nav>
@@ -84,7 +85,7 @@
           <input
             type="search"
             id="searchInput"
-            placeholder="Search English, Idoma, Alala (Orokam), symptom, or body part (e.g., pain, ikpeyi, headache)..."
+            placeholder="Search English, Idoma, Alala, Agatu, Otukpa, symptom, or body part..."
             aria-label="Search clinical phrases"
           />
 
@@ -95,8 +96,8 @@
             <option value="missing">Pending / Blank</option>
           </select>
 
-          <button type="button" id="alalaFilterBtn" class="btn btn-secondary" title="Show entries with Alala (Orokam) dialect translations">
-            Alala (Orokam)
+          <button type="button" id="alalaFilterBtn" class="btn btn-secondary" title="Show entries with dialect or phrasing variations">
+            Dialect Variants
           </button>
 
           <button type="button" id="bedsideToggleBtn" class="btn btn-secondary" title="Toggle large high-contrast bedside typography">
@@ -110,7 +111,7 @@
 
       <div class="results-meta-row">
         <span id="resultCount" class="muted small-note">Loading clinical phrases...</span>
-        <button type="button" id="quickRequestBtn" class="btn-link">+ Request missing term</button>
+        <button type="button" id="quickRequestBtn" class="btn-link">+ Request missing term / Volunteer</button>
       </div>
 
       <div id="fallbackBox" class="fallback-box" hidden></div>
@@ -186,121 +187,172 @@
       </div>
     </section>
 
-    <!-- 5. CONTRIBUTE / REQUEST TAB -->
+    <!-- 5. CONTRIBUTE / REQUEST / VOLUNTEER TAB -->
     <section id="contributeTab" class="tab-panel" hidden>
       <div class="two-col">
         <form id="phraseSubForm" class="panel stack-form">
-          <h3>Submit Translation, Edit, or Term Request</h3>
-          <p class="muted small-note">Anyone may request missing terms. Signed-in contributors can propose new translations, Alala (Orokam) dialect equivalents, or corrections (published after Admin review).</p>
+          <h3 id="subFormHeading">Submit Translation, Dialect Variant, Request, or Volunteer Application</h3>
+          <p class="muted small-note">Anyone can request missing terms or volunteer to join the translation/audio team. Signed-in contributors can submit phrases and dialect variants for Admin approval.</p>
 
           <label>
-            Submission Type
+            What would you like to do?
             <select id="subType">
               <option value="term_request">Request a Missing Clinical Term (Open to All)</option>
-              <option value="new_phrase">Propose New Translated Phrase (Contributors)</option>
-              <option value="edit_phrase">Suggest Correction / Dialect Variation (Contributors)</option>
+              <option value="volunteer_request">Volunteer as Translator / Voice Speaker / Reviewer (Open to All)</option>
+              <option value="new_phrase">Propose New Translated Phrase / Dialect Variant (Contributors)</option>
+              <option value="edit_phrase">Suggest Correction / Add Variant to Existing Entry (Contributors)</option>
             </select>
           </label>
 
           <input type="hidden" id="subTargetId" />
 
-          <div class="two-col">
+          <!-- VOLUNTEER FIELDS (Shown when Volunteer is selected) -->
+          <div id="volunteerFieldsBox" hidden>
+            <div class="two-col">
+              <label>
+                Your Full Name *
+                <input type="text" id="volName" placeholder="e.g. Samuel Risku Medugu" />
+              </label>
+              <label>
+                WhatsApp / Phone Number *
+                <input type="tel" id="volContact" placeholder="e.g. 080..." />
+              </label>
+            </div>
+            <div class="two-col">
+              <label>
+                Dialect(s) You Speak Fluently *
+                <input type="text" id="volDialects" placeholder="e.g. Otukpo, Alala (Orokam), Agatu, Otukpa, Apa..." />
+              </label>
+              <label>
+                Preferred Role
+                <select id="volRole">
+                  <option value="Translation & Dialect Contributor">Translation &amp; Dialect Contributor</option>
+                  <option value="Native Voice Recorder (Audio)">Native Voice Recorder (Audio)</option>
+                  <option value="Clinical Accuracy Reviewer (Doctor/Nurse)">Clinical Accuracy Reviewer (Doctor/Nurse)</option>
+                  <option value="Proofreading & Tone Verification">Proofreading &amp; Tone Verification</option>
+                </select>
+              </label>
+            </div>
             <label>
-              Clinical Section
-              <select id="subSection">
-                <option>I. Tone &amp; Pronunciation</option>
-                <option>II. Rapport &amp; Introduction</option>
-                <option>III. Core Symptoms</option>
-                <option>IV. Presenting Complaint</option>
-                <option>V. Time &amp; Duration</option>
-                <option>VI. Anatomical &amp; Body Parts</option>
-                <option>VII. Past Medical &amp; Drug History</option>
-                <option>VIII. Family History</option>
-                <option>IX. Social History</option>
-                <option>X. Pediatric Vocabulary</option>
-                <option>XI. Systemic &amp; Organ Review</option>
-                <option>XII. Examination Commands &amp; Consent</option>
-                <option>XIII. Post-Assessment Communication</option>
-                <option>XIV. Emergency &amp; Red Flags</option>
-                <option>XV. Cultural Communication</option>
-                <option>XVI. Quick Reference</option>
-              </select>
-            </label>
-
-            <label>
-              Subsection (Optional)
-              <input type="text" id="subSubsection" placeholder="e.g. Pain Qualifiers" />
+              Background / Motivation (Optional)
+              <textarea id="volNotes" rows="2" placeholder="e.g. 300L MBBS student at FUHSO, native Agatu/Otukpo speaker..."></textarea>
             </label>
           </div>
 
-          <label>
-            English Term / Clinical Question *
-            <input type="text" id="subEnglish" required placeholder="e.g. Please take a deep breath" />
-          </label>
+          <!-- PHRASE / REQUEST FIELDS -->
+          <div id="phraseFieldsBox">
+            <div class="two-col">
+              <label>
+                Clinical Section
+                <select id="subSection">
+                  <option>I. Tone &amp; Pronunciation</option>
+                  <option>II. Rapport &amp; Introduction</option>
+                  <option>III. Core Symptoms</option>
+                  <option>IV. Presenting Complaint</option>
+                  <option>V. Time &amp; Duration</option>
+                  <option>VI. Anatomical &amp; Body Parts</option>
+                  <option>VII. Past Medical &amp; Drug History</option>
+                  <option>VIII. Family History</option>
+                  <option>IX. Social History</option>
+                  <option>X. Pediatric Vocabulary</option>
+                  <option>XI. Systemic &amp; Organ Review</option>
+                  <option>XII. Examination Commands &amp; Consent</option>
+                  <option>XIII. Post-Assessment Communication</option>
+                  <option>XIV. Emergency &amp; Red Flags</option>
+                  <option>XV. Cultural Communication</option>
+                  <option>XVI. Quick Reference</option>
+                </select>
+              </label>
 
-          <div class="two-col">
+              <label>
+                Subsection (Optional)
+                <input type="text" id="subSubsection" placeholder="e.g. Pain Qualifiers" />
+              </label>
+            </div>
+
             <label>
-              Idoma Translation
-              <input type="text" id="subIdoma" placeholder="General Idoma phrasing" />
+              English Term / Clinical Question *
+              <input type="text" id="subEnglish" placeholder="e.g. Please take a deep breath" />
             </label>
+
+            <div class="two-col">
+              <label>
+                General Idoma Translation
+                <input type="text" id="subIdoma" placeholder="General / Otukpo Idoma phrasing" />
+              </label>
+              <label>
+                Dialect / Regional Variant Term (Optional)
+                <input type="text" id="subAlala" placeholder="Variant phrasing (e.g. Alala, Agatu, Otukpa, Apa)" />
+              </label>
+            </div>
+
+            <div class="two-col">
+              <label>
+                Dialect / Variant Label
+                <select id="subDialectLabel">
+                  <option value="Alala (Orokam)">Alala (Orokam)</option>
+                  <option value="Otukpo (Central)">Otukpo (Central)</option>
+                  <option value="Agatu">Agatu</option>
+                  <option value="Otukpa (Ogbadibo)">Otukpa (Ogbadibo)</option>
+                  <option value="Apa / Edumoga">Apa / Edumoga</option>
+                  <option value="Okpokwu">Okpokwu</option>
+                  <option value="Clinical / Polite Variant">Clinical / Polite Variant</option>
+                </select>
+              </label>
+              <label>
+                Syllable Breakdown
+                <input type="text" id="subSyllables" placeholder="e.g. o-ho bo-tu-wor ne" />
+              </label>
+            </div>
+
+            <div class="two-col">
+              <label>
+                Phonetic Hint
+                <input type="text" id="subPhonetic" placeholder="e.g. OH-hoh BOH-too-wor neh" />
+              </label>
+              <label>
+                Tone / Pitch Warning
+                <input type="text" id="subTone" placeholder="Note high/low pitch contrasts or homographs" />
+              </label>
+            </div>
+
             <label>
-              Alala (Orokam) Dialect (Optional)
-              <input type="text" id="subAlala" placeholder="Alala / Orokam equivalent" />
+              Clinical / Cultural Usage Note
+              <textarea id="subClinical" rows="2" placeholder="Bedside etiquette, dialect region note, or context"></textarea>
             </label>
+
+            <div class="two-col">
+              <label>
+                Proposed Confidence Status
+                <select id="subStatus">
+                  <option value="unconfirmed">Unconfirmed (?) — Needs verification</option>
+                  <option value="verified">Verified — Confirmed by native speaker</option>
+                  <option value="missing">Blank / Awaiting translation</option>
+                </select>
+              </label>
+
+              <label>
+                Your Name / Role (If guest request)
+                <input type="text" id="subRequester" placeholder="e.g. 300L Medical Student" />
+              </label>
+            </div>
+
+            <div class="checkbox-row">
+              <label style="flex-direction:row; align-items:center; gap:8px; font-weight:500;">
+                <input type="checkbox" id="subAllowVar" style="width:auto;" />
+                <span>Allow as a valid dialect or phrasing variation even if English term already exists</span>
+              </label>
+            </div>
+            <input type="hidden" id="subVariationOf" />
           </div>
 
-          <div class="two-col">
-            <label>
-              Syllable Breakdown
-              <input type="text" id="subSyllables" placeholder="e.g. o-ho bo-tu-wor ne" />
-            </label>
-            <label>
-              Phonetic Hint
-              <input type="text" id="subPhonetic" placeholder="e.g. OH-hoh BOH-too-wor neh" />
-            </label>
-          </div>
-
-          <label>
-            Tone / Pitch Warning
-            <input type="text" id="subTone" placeholder="Note high/low pitch contrasts or homographs" />
-          </label>
-
-          <label>
-            Clinical / Cultural Usage Note
-            <textarea id="subClinical" rows="2" placeholder="Bedside etiquette, dialect note, or context"></textarea>
-          </label>
-
-          <div class="two-col">
-            <label>
-              Proposed Confidence Status
-              <select id="subStatus">
-                <option value="unconfirmed">Unconfirmed (?) — Needs verification</option>
-                <option value="verified">Verified — Confirmed by native speaker</option>
-                <option value="missing">Blank / Awaiting translation</option>
-              </select>
-            </label>
-
-            <label>
-              Your Name / Role (If guest request)
-              <input type="text" id="subRequester" placeholder="e.g. 300L Medical Student" />
-            </label>
-          </div>
-
-          <div class="checkbox-row">
-            <label style="flex-direction:row; align-items:center; gap:8px; font-weight:500;">
-              <input type="checkbox" id="subAllowVar" style="width:auto;" />
-              <span>Allow as a valid dialect or phrasing variation even if English term already exists</span>
-            </label>
-          </div>
-          <input type="hidden" id="subVariationOf" />
-
-          <button type="submit" class="btn btn-primary">Submit Entry</button>
+          <button type="submit" id="subSubmitBtn" class="btn btn-primary">Submit Entry</button>
         </form>
 
         <!-- Voice Recorder Panel -->
         <div class="panel stack-form">
           <h3>Record Native Pronunciation Audio</h3>
-          <p class="muted small-note">Authorized contributors can record clear voice clips for any entry. Recordings remain queued until approved by an Admin.</p>
+          <p class="muted small-note">Authorized contributors can record clear voice clips for any entry and dialect. Recordings remain queued until approved by an Admin.</p>
 
           <label>
             Select Phrase to Record
@@ -309,7 +361,7 @@
 
           <label>
             Dialect / Speaker Note (Optional)
-            <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo central / Alala (Orokam) dialect" />
+            <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo central / Alala (Orokam) / Agatu / Otukpa" />
           </label>
 
           <div class="btn-row" style="justify-content:flex-start; align-items:center;">
@@ -328,8 +380,8 @@
     <section id="aboutTab" class="tab-panel" hidden>
       <div class="about-stack">
         <div class="panel">
-          <h3>Why Tone Matters in Clinical Idoma</h3>
-          <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters. Misplacing tone can alter meaning completely. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
+          <h3>Why Tone &amp; Dialects Matter in Clinical Idoma</h3>
+          <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters, and spans regional dialects including <strong>Otukpo (Central)</strong>, <strong>Alala (Orokam)</strong>, <strong>Agatu</strong>, <strong>Otukpa</strong>, and <strong>Apa</strong>. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
           <div class="two-col" style="margin-top:12px;">
             <div class="tone-alert" style="margin-top:0;"><strong>Ebi</strong> — Blood vs. Feces vs. To be dark (pitch-dependent)</div>
             <div class="tone-alert" style="margin-top:0;"><strong>Ipu</strong> — Abdomen / Stomach vs. Inside / Within</div>
@@ -338,8 +390,13 @@
         </div>
 
         <div class="panel">
-          <h3>Project Contributors &amp; Reviewers</h3>
-          <p class="muted small-note">Community clinicians, medical students, and native Idoma &amp; Alala (Orokam) speakers building this open clinical resource.</p>
+          <div class="panel-header-row">
+            <div>
+              <h3>Project Contributors &amp; Reviewers</h3>
+              <p class="muted small-note">Community clinicians, medical students, and native Idoma &amp; dialect speakers building this open clinical resource.</p>
+            </div>
+            <button type="button" id="aboutVolunteerBtn" class="btn btn-sm btn-primary">Volunteer to Contribute</button>
+          </div>
           <div id="creditsGrid" class="credits-grid" style="margin-top:12px;"></div>
         </div>
       </div>
@@ -356,6 +413,8 @@
     <div class="container footer-inner">
       <span class="muted small-note">Idoma Medical Clinical Phrasebook · Built for bedside communication at FUHSO &amp; Benue clinics</span>
       <div class="footer-links">
+        <button type="button" id="footerVolunteerBtn" class="btn-link">Volunteer</button>
+        <span aria-hidden="true" class="muted">·</span>
         <button type="button" id="footerAboutBtn" class="btn-link">Guide &amp; Credits</button>
         <span aria-hidden="true" class="muted">·</span>
         <button type="button" id="footerLoginTrigger" class="btn-link">Contributor Access</button>
