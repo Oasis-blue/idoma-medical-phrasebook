@@ -27,6 +27,52 @@
 
   const $ = (id) => document.getElementById(id);
 
+  async function syncDynamicAsrUrlFromDb() {
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) {
+      return;
+    }
+    try {
+      const url = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/app_settings?key=eq.idoma_asr_url&select=value`;
+      const res = await fetch(url, {
+        headers: {
+          apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!res.ok) return;
+      const rows = await res.json();
+      const val = Array.isArray(rows) && rows[0]?.value ? String(rows[0].value).trim() : "";
+      if (val) {
+        window.APP_CONFIG.DYNAMIC_ASR_URL = val;
+      }
+    } catch {
+      // Ignore if app_settings table is not created yet
+    }
+  }
+
+  async function saveDynamicAsrUrlToDb(newUrl) {
+    const clean = String(newUrl || "").trim();
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) {
+      throw new Error("Supabase is not connected.");
+    }
+    const endpoint = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/app_settings?on_conflict=key`;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=representation",
+        apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+      },
+      body: JSON.stringify([{ key: "idoma_asr_url", value: clean, updated_at: new Date().toISOString() }])
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Failed saving ASR URL (${res.status}): ${body}`);
+    }
+    window.APP_CONFIG.DYNAMIC_ASR_URL = clean;
+  }
+
   function setStatusBanner(msg, type = "info") {
     const el = $("systemNotice");
     if (!el) return;
@@ -596,6 +642,7 @@
       const pendingSubs = pendingAll.filter((s) => s.section !== "Volunteer Application" && s.submission_type !== "volunteer_request");
       const pendingAudio = data.audioClips.filter((a) => a.approval_status === "pending");
       const approvedAudioCount = Object.keys(audioMap).length;
+      const currentAsrUrl = window.APP_CONFIG?.DYNAMIC_ASR_URL || window.APP_CONFIG?.IDOMA_ASR_URL || "";
 
       container.innerHTML = `
         <div class="panel" style="margin-bottom:16px;">
@@ -623,6 +670,14 @@
             </div>
           </div>
           <p id="importSeedProgress" class="small-note muted" style="margin:8px 0 0;"></p>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1); display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+            <label style="flex:1; min-width:220px; margin:0;">
+              Live Cloud ASR URL (Colab / Gradio)
+              <input type="url" id="liveAsrUrlInput" value="${escapeHtml(currentAsrUrl)}" placeholder="https://xxxx.gradio.live" />
+            </label>
+            <button type="button" class="btn btn-secondary" id="saveLiveAsrUrlBtn">Save ASR URL</button>
+          </div>
         </div>
 
         <div class="admin-grid">
@@ -735,6 +790,21 @@
           </section>
         </div>
       `;
+
+      $("saveLiveAsrUrlBtn")?.addEventListener("click", async () => {
+        const input = $("liveAsrUrlInput");
+        const btn = $("saveLiveAsrUrlBtn");
+        if (!input) return;
+        if (btn) btn.disabled = true;
+        try {
+          await saveDynamicAsrUrlToDb(input.value);
+          setStatusBanner("Live Cloud ASR URL saved.", "success");
+        } catch (err) {
+          setStatusBanner(err.message, "warn");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
 
       $("importSeedBtn")?.addEventListener("click", async () => {
         const btn = $("importSeedBtn");
@@ -1244,6 +1314,7 @@
       toggleSubFormMode();
       if (!DB) throw new Error("PhraseDB failed to load. Check js/config.js and js/db.js for syntax errors.");
       DB.initClient();
+      await syncDynamicAsrUrlFromDb();
       session = DB.getSavedSession();
       trayIds = DB.getTrayIds();
       updateTrayBadge();
