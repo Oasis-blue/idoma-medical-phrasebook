@@ -246,8 +246,9 @@
     scored.sort((a, b) => a.dist - b.dist);
     if (scored.length === 0) return [];
 
-    const MAX_ACCEPTABLE_DIST = 1.65;
-    if (patientFrames.length < 3 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
+    // Stricter gate so unrelated speech/noise doesn't default to a single clip like "ipeyi"
+    const MAX_ACCEPTABLE_DIST = 0.85;
+    if (patientFrames.length < 6 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
       return [];
     }
 
@@ -285,7 +286,12 @@
 
     // 2. Fallback to offline MFCC + DTW acoustic matching
     const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
-    return { transcript: null, asrError: asr ? asr.error : null, engine: "offline-dtw", matches: dtwMatches };
+    return {
+      transcript: null,
+      asrError: asr ? asr.error : null,
+      engine: "offline-dtw",
+      matches: dtwMatches
+    };
   }
 
   window.AudioMatcher = {
