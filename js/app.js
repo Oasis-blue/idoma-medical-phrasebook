@@ -1162,9 +1162,10 @@
           $("listenRecordBtn").textContent = "Listen for Best Match";
           $("listenStatus").textContent = "Analyzing speech...";
 
-          const result = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+         const result = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
           const matches = Array.isArray(result) ? result : (result.matches || []);
           const transcript = Array.isArray(result) ? null : result.transcript;
+          const asrError = Array.isArray(result) ? null : result.asrError;
 
           const transcriptBoxHtml = transcript
             ? `<div class="tone-alert" style="margin-top:0; margin-bottom:10px; background:var(--surface-alt); color:var(--text); border-color:var(--accent);">
@@ -1183,9 +1184,11 @@
                   <div class="muted small-note">
                     ${transcript
                       ? "OmniASR transcribed the speech above, though no exact entry matched in the verified glossary yet. You can search keywords in Phrase Finder or use the response cards."
-                      : (hasAnyAudio
-                          ? "The patient's response did not closely match any recorded phrase. Try closer to the mic, or use the response cards."
-                          : "No approved contributor audio clips are available yet for offline matching.")}
+                      : (asrError
+                          ? `Cloud AI note: ${escapeHtml(asrError)}.`
+                          : (hasAnyAudio
+                              ? "The patient's response did not closely match any recorded phrase. Try closer to the mic, or use the response cards."
+                              : "No approved contributor audio clips are available yet for offline matching."))}
                   </div>
                 </div>
               </div>
