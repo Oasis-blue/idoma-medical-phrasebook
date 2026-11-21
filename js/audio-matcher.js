@@ -7,7 +7,20 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("Microphone access is not supported on this browser.");
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Phone browsers apply noise suppression / auto-gain by default, which distorts speech
+    // for recognition. Ask for the raw signal; fall back to defaults if the device refuses.
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+      });
+    } catch (err) {
+      if (err && (err.name === "OverconstrainedError" || err.name === "TypeError")) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } else {
+        throw err;
+      }
+    }
     audioChunks = [];
     recordStartTime = Date.now();
     mediaRecorder = new MediaRecorder(stream);
@@ -85,6 +98,15 @@
     }
   }
 
+  // True when most letters are Latin script. Idoma is written in Latin, so a transcript in
+  // Arabic or another script means the model misheard and must not be trusted.
+  function isMostlyLatin(text) {
+    const letters = String(text || "").match(/\p{L}/gu) || [];
+    if (letters.length === 0) return true;
+    const latin = letters.filter((ch) => /\p{Script=Latin}/u.test(ch)).length;
+    return latin / letters.length >= 0.8;
+  }
+
   function getActiveAsrUrl() {
     return (
       window.APP_CONFIG?.DYNAMIC_ASR_URL ||
@@ -104,7 +126,8 @@
 
     try {
       let uploadBlob = patientBlob;
-      let uploadName = "patient.webm";
+      const origType = String(patientBlob.type || "");
+      let uploadName = origType.includes("mp4") ? "patient.mp4" : origType.includes("ogg") ? "patient.ogg" : "patient.webm";
       try {
         uploadBlob = await convertBlobToWav16k(patientBlob);
         uploadName = "patient.wav";
@@ -176,6 +199,12 @@
 
       const parsed = JSON.parse(lastDataLine.slice(6));
       const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
+      if (transcript.startsWith("ASR_ERROR")) {
+        return { transcript: null, error: "Speech server could not process the audio. Using offline matching instead." };
+      }
+      if (transcript && !isMostlyLatin(transcript)) {
+        return { transcript: null, error: "Speech was not recognised clearly (non-Latin text returned). Using offline matching instead." };
+      }
       return { transcript: transcript || null, error: transcript ? null : "Model heard silence or unrecognized audio" };
     } catch (err) {
       return {
@@ -418,7 +447,7 @@
         const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, asr.transcript);
         const matches = ranked.slice(0, 3).map((r) => ({
           phrase: r.phrase,
-          confidence: Math.min(95, Math.max(45, r.score)),
+          confidence: Math.min(95, Math.max(20, r.score)),
           hasAudio: Boolean(audioMap[r.phrase.id]?.url),
           transcript: asr.transcript,
           engine: "omniasr"
