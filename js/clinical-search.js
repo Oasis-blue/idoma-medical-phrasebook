@@ -43,6 +43,12 @@
   function normalizeText(str) {
     return String(str || "")
       .toLowerCase()
+      // Idoma open vowels and similar letters outside a-z, mapped so they stay searchable
+      .replace(/ɔ/g, "o")
+      .replace(/ɛ/g, "e")
+      .replace(/ŋ/g, "ng")
+      .replace(/ɡ/g, "g")
+      .replace(/[’‘ʼ`´]/g, "'")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "") // strip tone diacritics for forgiving search
       .replace(/[^a-z0-9\s'-]/g, " ")
@@ -108,7 +114,34 @@
     };
   }
 
+  // Stricter matching for the hidden Common Terms Glossary: whole words, no loose synonyms or
+  // wide fuzzy matching, so hundreds of short everyday words do not flood the results.
+  function scoreGlossaryMatch(phrase, rawQuery) {
+    const q = normalizeText(rawQuery);
+    if (!q) return { matched: true, score: 1, matchedVia: null };
+
+    const en = normalizeText(phrase.english);
+    const id = normalizeText(phrase.idoma);
+    if (en === q || id === q) return { matched: true, score: 60, matchedVia: null };
+
+    const enWords = en.split(" ").filter(Boolean);
+    const idWords = id.split(" ").filter(Boolean);
+    const qWords = q.split(" ").filter(Boolean);
+    const wordHit = (w, words) => words.some((x) => x === w || (w.length >= 4 && x.startsWith(w)));
+    if (qWords.length && qWords.every((w) => wordHit(w, enWords) || wordHit(w, idWords))) {
+      return { matched: true, score: 55, matchedVia: null };
+    }
+
+    const cq = compactText(q);
+    const cid = compactText(phrase.idoma);
+    if (cq.length >= 4 && cid && (cid.includes(cq) || editDistance(cq, cid, 1) <= 1)) {
+      return { matched: true, score: 50, matchedVia: phrase.idoma };
+    }
+    return { matched: false, score: 0, matchedVia: null };
+  }
+
   function scorePhraseMatch(phrase, rawQuery) {
+    if (phrase && phrase.entry_kind === "glossary") return scoreGlossaryMatch(phrase, rawQuery);
     const cleanQuery = normalizeText(rawQuery);
     if (!cleanQuery) return { matched: true, score: 1, matchedVia: null };
 
