@@ -786,6 +786,38 @@ function renderGuideToneExamples() {
         }
       });
 
+      $("exportDatasetBtn")?.addEventListener("click", () => {
+        const dataset = [];
+        for (const p of phrases) {
+          const clip = audioMap[p.id];
+          if (!clip || !clip.url) continue;
+          const transcript = (p.idoma || p.alala || "").trim();
+          if (!transcript) continue;
+
+          dataset.push({
+            phrase_id: p.id,
+            audio_url: clip.url,
+            transcription: transcript,
+            english_meaning: p.english,
+            dialect: p.variationLabel || (p.alala && !p.idoma ? "Alala (Orokam)" : "Idoma (General)"),
+            section: p.section,
+            verified: p.status === "verified"
+          });
+        }
+
+        if (dataset.length === 0) {
+          setStatusBanner("No approved audio clips with transcriptions to export yet.", "warn");
+          return;
+        }
+
+        const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `idoma-clinical-speech-dataset-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        setStatusBanner(`Exported ${dataset.length} labeled Idoma audio clips for AI training.`, "success");
+      });
+
       $("contribForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
