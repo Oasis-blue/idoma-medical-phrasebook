@@ -1231,33 +1231,40 @@
     });
   }
 
-  async function init() {
-    bindEvents();
-    toggleSubFormMode();
-    DB.initClient();
-    session = DB.getSavedSession();
-    trayIds = DB.getTrayIds();
-    updateTrayBadge();
-    renderSessionUI();
+ async function init() {
+    try {
+      bindEvents();
+      toggleSubFormMode();
+      if (!DB) throw new Error("PhraseDB failed to load. Check js/config.js and js/db.js for syntax errors.");
+      DB.initClient();
+      session = DB.getSavedSession();
+      trayIds = DB.getTrayIds();
+      updateTrayBadge();
+      renderSessionUI();
 
-    seedPhrases = await DB.loadSeedPhrases();
-    const fetched = await DB.fetchPhrases(seedPhrases);
-    phrases = fetched.phrases;
-    audioMap = await DB.fetchApprovedAudioMap();
-    credits = await DB.fetchPublicCredits();
+      seedPhrases = await DB.loadSeedPhrases();
+      const fetched = await DB.fetchPhrases(seedPhrases);
+      phrases = fetched.phrases;
+      audioMap = await DB.fetchApprovedAudioMap();
+      credits = await DB.fetchPublicCredits();
 
-    renderSectionPills();
-    populateAudioPhraseSelect();
-    renderPhrases();
-    renderTray();
-    renderPracticeCard();
-    renderCredits();
-    renderGuideToneExamples();
+      renderSectionPills();
+      populateAudioPhraseSelect();
+      renderPhrases();
+      renderTray();
+      renderPracticeCard();
+      renderCredits();
+      renderGuideToneExamples();
 
-    if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
-      setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
+      if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
+        setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
+      }
+    } catch (err) {
+      console.error("App init failed:", err);
+      const countEl = $("resultCount");
+      if (countEl) countEl.textContent = "Startup error — see banner below";
+      setStatusBanner("Startup error: " + (err?.message || err), "warn");
     }
   }
-
   document.addEventListener("DOMContentLoaded", init);
 })();
