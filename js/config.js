@@ -5,5 +5,5 @@ window.APP_CONFIG = {
   SUPABASE_URL: "https://tqsfsvlsztilrsmbkbnz.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_GkHan_5apqHG3dP9g7_VSg_Ow5GWnBU",
   AUDIO_BUCKET: "idoma-audio",
-  IDOMA_ASR_URL: "https://2775145e699abfcfcb.gradio.live"
+  IDOMA_ASR_URL: "https://2775145e699abfcfcb.gradio.live/"
 };
