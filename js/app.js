@@ -55,17 +55,25 @@
     if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) {
       throw new Error("Supabase is not connected.");
     }
-    const endpoint = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/app_settings?on_conflict=key`;
+    if (!session || !session.is_admin || !session.access_code) {
+      throw new Error("Admin sign-in is required to update the live ASR URL.");
+    }
+
+    const endpoint = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/rpc/admin_set_setting`;
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates,return=representation",
         apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
         Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
       },
-      body: JSON.stringify([{ key: "idoma_asr_url", value: clean, updated_at: new Date().toISOString() }])
+      body: JSON.stringify({
+        p_admin_code: session.access_code,
+        p_key: "idoma_asr_url",
+        p_value: clean
+      })
     });
+
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Failed saving ASR URL (${res.status}): ${body}`);
