@@ -1,11 +1,14 @@
 -- ============================================================================
--- Idoma Medical Phrasebook - Complete Working Supabase Schema & RPCs
--- Run this entire script in Supabase SQL Editor.
+-- Idoma Medical Phrasebook - Supabase schema + RPCs (v2, Nov 2026)
+-- Safe to re-run on the live database: it only creates what is missing,
+-- replaces functions, and does NOT insert any default contributors or codes.
+-- Adds: Alala column, volunteer_request submissions, app_settings (live ASR URL),
+-- admin_set_setting, tighter guest policies, audio upload size limit.
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
--- 1. Contributors, Access Codes & Credits
+-- 1. Contributors ------------------------------------------------------------
 create table if not exists public.contributors (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
@@ -24,7 +27,7 @@ create table if not exists public.contributors (
 create index if not exists idx_contributors_code_active
   on public.contributors (access_code) where is_active = true;
 
--- 2. Published Phrasebook Entries
+-- 2. Published phrases -------------------------------------------------------
 create table if not exists public.phrases (
   id uuid primary key default gen_random_uuid(),
   phrase_code text unique,
@@ -51,14 +54,15 @@ create table if not exists public.phrases (
   updated_at timestamptz not null default now()
 );
 
+alter table public.phrases add column if not exists alala_term text;
+
 create index if not exists idx_phrases_english_norm on public.phrases (english_normalized);
 create index if not exists idx_phrases_section_sort on public.phrases (section, sort_order, english_normalized);
 
--- 3. Submissions, Suggested Edits & Public Term Requests
+-- 3. Submissions (new phrase, edit, term request, volunteer request) ----------
 create table if not exists public.phrase_submissions (
   id uuid primary key default gen_random_uuid(),
-  submission_type text not null
-    check (submission_type in ('new_phrase', 'edit_phrase', 'term_request')),
+  submission_type text not null,
   target_phrase_id uuid references public.phrases (id) on delete set null,
   variation_of_id uuid references public.phrases (id) on delete set null,
   allow_variation boolean not null default false,
@@ -85,9 +89,18 @@ create table if not exists public.phrase_submissions (
   created_at timestamptz not null default now()
 );
 
+alter table public.phrase_submissions add column if not exists alala_term text;
+
+-- allow volunteer_request (replaces the old 3-value check)
+alter table public.phrase_submissions
+  drop constraint if exists phrase_submissions_submission_type_check;
+alter table public.phrase_submissions
+  add constraint phrase_submissions_submission_type_check
+  check (submission_type in ('new_phrase', 'edit_phrase', 'term_request', 'volunteer_request'));
+
 create index if not exists idx_submissions_status on public.phrase_submissions (review_status, created_at desc);
 
--- 4. Pronunciation Audio Clips (Approved Clips Go Live to Everyone)
+-- 4. Audio clips -------------------------------------------------------------
 create table if not exists public.audio_clips (
   id uuid primary key default gen_random_uuid(),
   phrase_id uuid not null references public.phrases (id) on delete cascade,
@@ -112,7 +125,14 @@ create unique index if not exists uq_one_primary_approved_audio
   on public.audio_clips (phrase_id)
   where is_primary = true and approval_status = 'approved';
 
--- Updated-at trigger
+-- 5. App settings (live ASR URL etc.) ------------------------------------------
+create table if not exists public.app_settings (
+  key text primary key,
+  value text,
+  updated_at timestamptz not null default now()
+);
+
+-- 6. Triggers ----------------------------------------------------------------
 create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -129,33 +149,21 @@ drop trigger if exists trg_phrases_updated_at on public.phrases;
 create trigger trg_phrases_updated_at
 before update on public.phrases for each row execute function public.set_updated_at();
 
--- Storage Bucket for Audio Clips
+-- 7. Storage bucket (audio) ----------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('idoma-audio', 'idoma-audio', true)
 on conflict (id) do nothing;
 
--- Seed Initial Contributors (Update codes before going public!)
-insert into public.contributors
-  (full_name, role_title, access_code, is_admin, show_in_credits, is_active, daily_submission_limit, daily_audio_limit, notes)
-values
-  ('Alex Sunday Okoh', 'Author & Lead Builder', 'ADMIN-FUHSO-01', true, true, true, 200, 200, '300-level MBBS student, FUHSO'),
-  ('Grace Adini', 'Translation', 'CONT-GRACE-01', false, true, true, 50, 50, 'Translation contributor'),
-  ('Ben Odeh', 'Dialect review', 'CONT-BEN-01', false, true, true, 50, 50, 'Dialect review contributor'),
-  ('Dr Jude A', 'Clinical accuracy review', 'CONT-JUDE-01', false, true, true, 50, 50, 'Clinical accuracy reviewer'),
-  ('James Gabriel', 'Proofreading', 'CONT-JAMES-01', false, true, true, 50, 50, 'Proofreading contributor')
-on conflict (access_code) do nothing;
+-- cap each upload at 5 MB so the public bucket can't be flooded with huge files
+update storage.buckets set file_size_limit = 5242880 where id = 'idoma-audio';
 
--- ============================================================================
--- Row Level Security + Security-Definer RPC Functions
--- Using RPCs lets access codes authenticate cleanly and enforces admin checks
--- without exposing access codes publicly.
--- ============================================================================
+-- 8. Row Level Security --------------------------------------------------------
 alter table public.contributors enable row level security;
 alter table public.phrases enable row level security;
 alter table public.phrase_submissions enable row level security;
 alter table public.audio_clips enable row level security;
+alter table public.app_settings enable row level security;
 
--- Public read access for published phrases & approved audio
 drop policy if exists "Public read published phrases" on public.phrases;
 create policy "Public read published phrases"
 on public.phrases for select using (is_published = true);
@@ -164,12 +172,22 @@ drop policy if exists "Public read approved audio" on public.audio_clips;
 create policy "Public read approved audio"
 on public.audio_clips for select using (approval_status = 'approved');
 
--- Public can submit a term request or suggested edit into queue
+-- Guests may only add a pending term/volunteer request with no contributor attached
 drop policy if exists "Public insert submissions" on public.phrase_submissions;
 create policy "Public insert submissions"
-on public.phrase_submissions for insert with check (true);
+on public.phrase_submissions for insert
+with check (
+  submission_type in ('term_request', 'volunteer_request')
+  and review_status = 'pending'
+  and submitted_by_contributor_id is null
+  and reviewed_by_contributor_id is null
+);
 
--- Public can upload audio files into idoma-audio bucket
+-- Only the live ASR URL setting is readable by the public
+drop policy if exists "Public read asr setting" on public.app_settings;
+create policy "Public read asr setting"
+on public.app_settings for select using (key = 'idoma_asr_url');
+
 drop policy if exists "Public upload idoma audio" on storage.objects;
 create policy "Public upload idoma audio"
 on storage.objects for insert with check (bucket_id = 'idoma-audio');
@@ -178,7 +196,24 @@ drop policy if exists "Public read idoma audio" on storage.objects;
 create policy "Public read idoma audio"
 on storage.objects for select using (bucket_id = 'idoma-audio');
 
--- Helper: validate access code
+-- 9. Drop old overloads of functions whose signature changed ------------------
+do $$
+declare
+  r record;
+begin
+  for r in
+    select p.oid::regprocedure as func_sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('submit_phrase_entry', 'admin_upsert_phrase')
+  loop
+    execute format('drop function if exists %s', r.func_sig);
+  end loop;
+end;
+$$;
+
+-- 10. Functions ------------------------------------------------------------------
 create or replace function public.verify_contributor_code(p_code text)
 returns table (
   id uuid,
@@ -199,7 +234,6 @@ begin
 end;
 $$;
 
--- Public credit list (no access codes exposed)
 create or replace function public.get_public_credits()
 returns table (
   id uuid,
@@ -214,7 +248,6 @@ language sql security definer set search_path = public as $$
   order by c.is_admin desc, c.created_at asc;
 $$;
 
--- Authenticated contributor or admin submission with daily limit & duplicate check
 create or replace function public.submit_phrase_entry(
   p_code text,
   p_submission_type text,
@@ -225,6 +258,7 @@ create or replace function public.submit_phrase_entry(
   p_subsection text,
   p_english_term text,
   p_idoma_term text,
+  p_alala_term text,
   p_syllables text,
   p_phonetic_hint text,
   p_tone_note text,
@@ -245,6 +279,10 @@ begin
 
   if v_actor.id is null then
     raise exception 'Invalid or inactive access code.';
+  end if;
+
+  if p_submission_type not in ('new_phrase', 'edit_phrase', 'term_request', 'volunteer_request') then
+    raise exception 'Invalid submission type.';
   end if;
 
   select count(*) into v_today_count
@@ -268,14 +306,15 @@ begin
 
   insert into public.phrase_submissions (
     submission_type, target_phrase_id, variation_of_id, allow_variation,
-    section, subsection, english_term, idoma_term, syllables, phonetic_hint,
+    section, subsection, english_term, idoma_term, alala_term, syllables, phonetic_hint,
     tone_note, clinical_note, proposed_verification_status,
     submitted_by_contributor_id, requester_label, review_status
   ) values (
     p_submission_type, p_target_phrase_id, p_variation_of_id, coalesce(p_allow_variation, false),
     coalesce(nullif(trim(p_section), ''), 'General'), nullif(trim(p_subsection), ''),
-    trim(p_english_term), nullif(trim(p_idoma_term), ''), nullif(trim(p_syllables), ''),
-    nullif(trim(p_phonetic_hint), ''), nullif(trim(p_tone_note), ''), nullif(trim(p_clinical_note), ''),
+    trim(p_english_term), nullif(trim(p_idoma_term), ''), nullif(trim(p_alala_term), ''),
+    nullif(trim(p_syllables), ''), nullif(trim(p_phonetic_hint), ''),
+    nullif(trim(p_tone_note), ''), nullif(trim(p_clinical_note), ''),
     coalesce(p_proposed_status, 'unconfirmed'), v_actor.id, v_actor.full_name, 'pending'
   ) returning * into v_row;
 
@@ -283,7 +322,6 @@ begin
 end;
 $$;
 
--- Record audio clip submission (enforces daily limit; goes to pending review)
 create or replace function public.register_audio_clip(
   p_code text,
   p_phrase_id uuid,
@@ -326,7 +364,6 @@ begin
 end;
 $$;
 
--- Admin: list all contributors (with codes for admin management)
 create or replace function public.admin_list_contributors(p_admin_code text)
 returns setof public.contributors
 language plpgsql security definer set search_path = public as $$
@@ -339,7 +376,6 @@ begin
 end;
 $$;
 
--- Admin: create or update contributor + access code + limits + credits flag
 create or replace function public.admin_upsert_contributor(
   p_admin_code text,
   p_id uuid,
@@ -390,7 +426,6 @@ begin
 end;
 $$;
 
--- Admin: delete contributor
 create or replace function public.admin_delete_contributor(p_admin_code text, p_target_id uuid)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -403,7 +438,6 @@ begin
 end;
 $$;
 
--- Admin: list pending submissions
 create or replace function public.admin_list_submissions(p_admin_code text)
 returns setof public.phrase_submissions
 language plpgsql security definer set search_path = public as $$
@@ -416,7 +450,7 @@ begin
 end;
 $$;
 
--- Admin: approve or reject submission (promotes approved new/edit phrase into phrases)
+-- Approve/reject; approved new/edit phrases are promoted into public.phrases
 create or replace function public.admin_review_submission(
   p_admin_code text,
   p_submission_id uuid,
@@ -453,6 +487,7 @@ begin
         subsection = coalesce(v_sub.subsection, subsection),
         english_term = coalesce(nullif(v_sub.english_term, ''), english_term),
         idoma_term = coalesce(v_sub.idoma_term, idoma_term),
+        alala_term = coalesce(v_sub.alala_term, alala_term),
         syllables = coalesce(v_sub.syllables, syllables),
         phonetic_hint = coalesce(v_sub.phonetic_hint, phonetic_hint),
         tone_note = coalesce(v_sub.tone_note, tone_note),
@@ -462,11 +497,11 @@ begin
       where id = v_sub.target_phrase_id;
     else
       insert into public.phrases (
-        section, subsection, english_term, idoma_term, syllables, phonetic_hint,
+        section, subsection, english_term, idoma_term, alala_term, syllables, phonetic_hint,
         tone_note, clinical_note, verification_status, variation_of_id,
         variation_label, is_published, created_by_contributor_id
       ) values (
-        v_sub.section, v_sub.subsection, v_sub.english_term, v_sub.idoma_term,
+        v_sub.section, v_sub.subsection, v_sub.english_term, v_sub.idoma_term, v_sub.alala_term,
         v_sub.syllables, v_sub.phonetic_hint, v_sub.tone_note, v_sub.clinical_note,
         v_sub.proposed_verification_status, v_sub.variation_of_id,
         case when v_sub.allow_variation then 'Variant' else null end,
@@ -477,7 +512,6 @@ begin
 end;
 $$;
 
--- Admin: list audio clips
 create or replace function public.admin_list_audio_clips(p_admin_code text)
 returns setof public.audio_clips
 language plpgsql security definer set search_path = public as $$
@@ -490,7 +524,6 @@ begin
 end;
 $$;
 
--- Admin: approve or reject audio clip (and set as primary if approved)
 create or replace function public.admin_review_audio_clip(
   p_admin_code text,
   p_clip_id uuid,
@@ -528,7 +561,9 @@ begin
 end;
 $$;
 
--- Admin: upsert phrase directly (for batch PDF updates / admin edits)
+-- Admin: upsert phrase (used by seed sync and admin edits).
+-- Blank Alala never erases an existing Alala form, so re-syncing the seed is safe.
+-- Blank phrase_code updates the matching English term + section instead of duplicating.
 create or replace function public.admin_upsert_phrase(
   p_admin_code text,
   p_phrase_code text,
@@ -536,6 +571,7 @@ create or replace function public.admin_upsert_phrase(
   p_subsection text,
   p_english_term text,
   p_idoma_term text,
+  p_alala_term text,
   p_syllables text,
   p_phonetic_hint text,
   p_tone_note text,
@@ -547,17 +583,54 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_admin public.contributors%rowtype;
   v_res public.phrases%rowtype;
+  v_code text := nullif(trim(p_phrase_code), '');
+  v_existing uuid;
 begin
-  select * into v_admin from public.contributors where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
-  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  select * into v_admin
+  from public.contributors
+  where access_code = trim(p_admin_code)
+    and is_active = true
+    and is_admin = true;
+
+  if v_admin.id is null then
+    raise exception 'Admin privileges required.';
+  end if;
+
+  if v_code is null then
+    select id into v_existing
+    from public.phrases
+    where english_normalized = lower(trim(regexp_replace(p_english_term, '\s+', ' ', 'g')))
+      and section = trim(p_section)
+      and variation_of_id is null
+    order by created_at asc
+    limit 1;
+
+    if v_existing is not null then
+      update public.phrases set
+        subsection = nullif(trim(p_subsection), ''),
+        idoma_term = nullif(trim(p_idoma_term), ''),
+        alala_term = coalesce(nullif(trim(p_alala_term), ''), alala_term),
+        syllables = nullif(trim(p_syllables), ''),
+        phonetic_hint = nullif(trim(p_phonetic_hint), ''),
+        tone_note = nullif(trim(p_tone_note), ''),
+        clinical_note = nullif(trim(p_clinical_note), ''),
+        verification_status = coalesce(p_verification_status, verification_status),
+        updated_by_contributor_id = v_admin.id
+      where id = v_existing
+      returning * into v_res;
+      return v_res;
+    end if;
+  end if;
 
   insert into public.phrases (
-    phrase_code, section, subsection, english_term, idoma_term, syllables,
-    phonetic_hint, tone_note, clinical_note, verification_status, is_published, created_by_contributor_id
+    phrase_code, section, subsection, english_term, idoma_term, alala_term,
+    syllables, phonetic_hint, tone_note, clinical_note, verification_status,
+    is_published, created_by_contributor_id
   ) values (
-    nullif(trim(p_phrase_code), ''), trim(p_section), nullif(trim(p_subsection), ''),
-    trim(p_english_term), nullif(trim(p_idoma_term), ''), nullif(trim(p_syllables), ''),
-    nullif(trim(p_phonetic_hint), ''), nullif(trim(p_tone_note), ''), nullif(trim(p_clinical_note), ''),
+    v_code, trim(p_section), nullif(trim(p_subsection), ''),
+    trim(p_english_term), nullif(trim(p_idoma_term), ''), nullif(trim(p_alala_term), ''),
+    nullif(trim(p_syllables), ''), nullif(trim(p_phonetic_hint), ''),
+    nullif(trim(p_tone_note), ''), nullif(trim(p_clinical_note), ''),
     coalesce(p_verification_status, 'unconfirmed'), true, v_admin.id
   )
   on conflict (phrase_code) do update set
@@ -565,6 +638,7 @@ begin
     subsection = excluded.subsection,
     english_term = excluded.english_term,
     idoma_term = excluded.idoma_term,
+    alala_term = coalesce(excluded.alala_term, public.phrases.alala_term),
     syllables = excluded.syllables,
     phonetic_hint = excluded.phonetic_hint,
     tone_note = excluded.tone_note,
@@ -576,3 +650,35 @@ begin
   return v_res;
 end;
 $$;
+
+-- Admin: set an app setting (live ASR URL)
+create or replace function public.admin_set_setting(
+  p_admin_code text,
+  p_key text,
+  p_value text
+)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin
+  from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+
+  if v_admin.id is null then
+    raise exception 'Admin privileges required.';
+  end if;
+
+  if p_key is null or trim(p_key) = '' then
+    raise exception 'Setting key required.';
+  end if;
+
+  insert into public.app_settings (key, value, updated_at)
+  values (trim(p_key), nullif(trim(p_value), ''), now())
+  on conflict (key) do update set value = excluded.value, updated_at = now();
+end;
+$$;
+
+-- Make the API pick up the new tables/functions immediately
+notify pgrst, 'reload schema';
