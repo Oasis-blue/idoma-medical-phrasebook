@@ -58,16 +58,25 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 2. Network-first for Supabase REST queries with cache fallback
+  // 2. Network-first for Supabase REST queries with safe cache/offline fallback
   if (url.hostname.includes("supabase.co")) {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+          if (res && res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+          }
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(async () => {
+          const cached = await caches.match(req);
+          return cached || new Response(JSON.stringify([]), {
+            status: 503,
+            statusText: "Supabase offline",
+            headers: { "Content-Type": "application/json" }
+          });
+        })
     );
     return;
   }
@@ -75,18 +84,20 @@ self.addEventListener("fetch", (event) => {
   // 3. Stale-while-revalidate for local app shell & seed JSON
   if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(req).then((cached) => {
+      caches.match(req).then(async (cached) => {
         const networkFetch = fetch(req)
           .then((res) => {
             if (res && res.ok) {
               const clone = res.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+              caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
             }
             return res;
           })
-          .catch(() => cached);
+          .catch(() => null);
 
-        return cached || networkFetch;
+        if (cached) return cached;
+        const fresh = await networkFetch;
+        return fresh || new Response("Offline", { status: 503, statusText: "Offline" });
       })
     );
   }
