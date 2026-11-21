@@ -103,7 +103,26 @@
       switchTab("adminTab");
     });
   }
+  
+function renderGuideToneExamples() {
+    const wrap = $("guideToneExamples");
+    if (!wrap) return;
+    const withTone = phrases
+      .filter((p) => p.status === "verified" && p.tone && (p.idoma || p.alala))
+      .slice(0, 4);
 
+    if (withTone.length === 0) {
+      wrap.innerHTML = `<div class="tone-alert" style="margin-top:0;">Verified tone-contrast notes added by native reviewers will appear here automatically.</div>`;
+      return;
+    }
+
+    wrap.innerHTML = withTone.map((p) => `
+      <div class="tone-alert" style="margin-top:0;">
+        <strong>${escapeHtml(p.idoma || p.alala)}</strong> (${escapeHtml(p.english)}) — ${escapeHtml(p.tone)}
+      </div>
+    `).join("");
+  }
+  
   function renderSessionUI() {
     const headerAuthBox = $("headerAuthBox");
     const loginForm = $("loginForm");
@@ -1179,6 +1198,7 @@
     renderTray();
     renderPracticeCard();
     renderCredits();
+    renderGuideToneExamples();
 
     if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
       setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
