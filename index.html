@@ -362,8 +362,23 @@
           </label>
 
           <label>
+            Dialect you are recording
+            <select id="audioDialect">
+              <option value="idoma">Idoma (general)</option>
+              <option value="alala">Alala (Orokam)</option>
+              <option value="other">Other dialect (say which in the note below)</option>
+            </select>
+          </label>
+
+          <label>
+            Exactly what you say in this recording (written)
+            <input type="text" id="audioSpokenText" placeholder="Type the words you will say. One version only, no / or brackets" />
+            <span id="audioSpokenHint" class="muted small-note"></span>
+          </label>
+
+          <label>
             Dialect / Speaker Note (Optional)
-            <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo central / Alala (Orokam) / Agatu / Otukpa" />
+            <input type="text" id="audioDialectNote" placeholder="e.g. Otukpo central / Agatu / Otukpa" />
           </label>
 
           <div class="btn-row" style="justify-content:flex-start; align-items:center;">
