@@ -73,11 +73,15 @@
         signal: controller.signal
       });
       const sseText = await resultRes.text();
-      const dataLine = sseText.split("\n").find((l) => l.startsWith("data: "));
-      if (!dataLine) return null;
+     const dataLines = sseText
+     .split("\n")
+     .filter((l) => l.startsWith("data: ") && l !== "data: null");
+   const lastDataLine = dataLines[dataLines.length - 1];
+   if (!lastDataLine) return null;
 
-      const parsed = JSON.parse(dataLine.slice(6));
-      const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
+   const parsed = JSON.parse(lastDataLine.slice(6));
+   const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
+   return transcript || null;
       return transcript || null;
     } catch {
       return null;
