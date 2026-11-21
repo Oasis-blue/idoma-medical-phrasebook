@@ -32,6 +32,59 @@
     });
   }
 
+  // --- Cloud Meta MMS (idu) Transcription via Gradio API ---
+  async function transcribeViaMMS(patientBlob) {
+    const baseUrl = (window.APP_CONFIG?.IDOMA_ASR_URL || "").replace(/\/+$/, "");
+    if (!baseUrl || !navigator.onLine) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+
+    try {
+      // 1. Upload audio blob to Gradio Space
+      const form = new FormData();
+      form.append("files", patientBlob, "patient.webm");
+
+      const uploadRes = await fetch(`${baseUrl}/gradio_api/upload`, {
+        method: "POST",
+        body: form,
+        signal: controller.signal
+      });
+      if (!uploadRes.ok) return null;
+      const uploadedPaths = await uploadRes.json();
+      const serverPath = Array.isArray(uploadedPaths) ? uploadedPaths[0] : null;
+      if (!serverPath) return null;
+
+      // 2. Trigger prediction
+      const callRes = await fetch(`${baseUrl}/gradio_api/call/predict`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: [{ path: serverPath }] }),
+        signal: controller.signal
+      });
+      if (!callRes.ok) return null;
+      const { event_id } = await callRes.json();
+      if (!event_id) return null;
+
+      // 3. Read SSE result stream
+      const resultRes = await fetch(`${baseUrl}/gradio_api/call/predict/${event_id}`, {
+        signal: controller.signal
+      });
+      const sseText = await resultRes.text();
+      const dataLine = sseText.split("\n").find((l) => l.startsWith("data: "));
+      if (!dataLine) return null;
+
+      const parsed = JSON.parse(dataLine.slice(6));
+      const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
+      return transcript || null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // --- Local Offline MFCC + DTW Acoustic Fingerprinting ---
   async function decodeAndTrim(blob) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const ctx = new AudioCtx();
@@ -137,11 +190,9 @@
     return frames;
   }
 
-  async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
+  async function matchViaLocalDTW(patientBlob, candidatePhrases, audioMap) {
     const withAudio = candidatePhrases.filter((p) => audioMap[p.id] && audioMap[p.id].url);
-    if (withAudio.length === 0) {
-      return [];
-    }
+    if (withAudio.length === 0) return [];
 
     const patientSamples = await decodeAndTrim(patientBlob);
     const patientFrames = extractSpectralFrames(patientSamples);
@@ -151,9 +202,9 @@
       try {
         const refFrames = await getReferenceFrames(phrase.id, audioMap[phrase.id].url);
         const dist = dtwDistance(patientFrames, refFrames);
-        scored.push({ phrase, dist, hasAudio: true });
+        scored.push({ phrase, dist });
       } catch {
-        // Skip unreadable audio clip
+        // Skip unreadable clip
       }
     }
 
@@ -176,9 +227,30 @@
         return {
           phrase: item.phrase,
           confidence,
-          hasAudio: true
+          hasAudio: Boolean(audioMap[item.phrase.id]?.url),
+          engine: "offline-dtw"
         };
       });
+  }
+
+  async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
+    // 1. Try cloud Meta MMS (idu) speech recognition first if configured & online
+    const transcript = await transcribeViaMMS(patientBlob);
+    if (transcript && window.ClinicalSearch) {
+      const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, transcript);
+      if (ranked.length > 0) {
+        return ranked.slice(0, 3).map((r) => ({
+          phrase: r.phrase,
+          confidence: Math.min(95, Math.max(45, r.score)),
+          hasAudio: Boolean(audioMap[r.phrase.id]?.url),
+          transcript,
+          engine: "mms-idu"
+        }));
+      }
+    }
+
+    // 2. Fallback to offline MFCC + DTW acoustic matching
+    return matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
   }
 
   window.AudioMatcher = {
