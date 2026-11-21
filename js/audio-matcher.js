@@ -195,7 +195,7 @@
     if (!matcherUrl || !navigator.onLine) return null;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 35000);
 
     try {
       const compactCandidates = candidatePhrases
@@ -369,19 +369,20 @@
     scored.sort((a, b) => a.dist - b.dist);
     if (scored.length === 0) return [];
 
-    const MAX_ACCEPTABLE_DIST = 0.85;
-    if (patientFrames.length < 6 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
+    // Stricter gate so unrelated speech/noise does not falsely match clips
+    const MAX_ACCEPTABLE_DIST = 0.52;
+    if (patientFrames.length < 10 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
       return [];
     }
 
-    const bestDist = scored[0].dist;
     return scored
       .filter((item) => item.dist <= MAX_ACCEPTABLE_DIST)
       .slice(0, 3)
       .map((item) => {
-        const absScore = Math.max(0, 1 - item.dist / (MAX_ACCEPTABLE_DIST * 1.15));
-        const relScore = bestDist / Math.max(item.dist, 0.001);
-        const confidence = Math.max(30, Math.min(95, Math.round((absScore * 0.55 + relScore * 0.45) * 100)));
+        const confidence = Math.max(
+          25,
+          Math.min(85, Math.round((1 - item.dist / MAX_ACCEPTABLE_DIST) * 75 + 10))
+        );
         return {
           phrase: item.phrase,
           confidence,
