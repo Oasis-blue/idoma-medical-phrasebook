@@ -215,7 +215,7 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in (
-        'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
+        'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
         'register_audio_clip', 'admin_list_contributors', 'admin_upsert_contributor',
         'admin_delete_contributor', 'admin_list_submissions', 'admin_review_submission',
         'admin_list_audio_clips', 'admin_review_audio_clip', 'admin_upsert_phrase',
@@ -705,6 +705,157 @@ begin
   insert into public.app_settings (key, value, updated_at)
   values (trim(p_key), nullif(trim(p_value), ''), now())
   on conflict (key) do update set value = excluded.value, updated_at = now();
+end;
+$$;
+
+
+-- 11. Common Terms Glossary (hidden from the home list, searchable) -------------------
+create extension if not exists unaccent with schema extensions;
+
+alter table public.phrases add column if not exists entry_kind text not null default 'clinical';
+alter table public.phrases drop constraint if exists phrases_entry_kind_check;
+alter table public.phrases add constraint phrases_entry_kind_check check (entry_kind in ('clinical', 'glossary'));
+create index if not exists idx_phrases_entry_kind on public.phrases (entry_kind);
+
+-- Compare Idoma spellings loosely: case, tone marks, apostrophes, spaces and open vowels ignored
+create or replace function public.norm_idoma_text(t text)
+returns text
+language sql stable set search_path = public, extensions as $$
+  select regexp_replace(
+    lower(unaccent(translate(coalesce(t, ''), 'ɔɛŋƆƐ', 'oenOE'))),
+    '[^a-z0-9]', '', 'g')
+$$;
+
+-- Admin: import glossary entries from a lexicon JSON (array of {id, category, english, idoma, syllables, pronunciation, note}).
+--  * identical to an existing term (same English, same Idoma spelling)  -> skipped
+--  * same English as an existing term but a different Idoma form        -> stored as a glossary variant of it
+--  * new English                                                        -> stored as a standalone glossary entry
+-- Safe to re-run: entries are keyed by GLOS_<id>, and a re-run only refreshes their text.
+create or replace function public.admin_import_glossary(
+  p_admin_code text,
+  p_entries jsonb,
+  p_source text default 'Common terms glossary'
+)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_admin public.contributors%rowtype;
+  e jsonb;
+  v_code text;
+  v_english text;
+  v_idoma text;
+  v_orig text;
+  v_fix text;
+  v_cat text;
+  v_note text;
+  v_match public.phrases%rowtype;
+  v_existing uuid;
+  v_n integer := 0;
+  v_ins integer := 0;
+  v_var integer := 0;
+  v_same integer := 0;
+  v_bad integer := 0;
+  v_upd integer := 0;
+begin
+  select * into v_admin
+  from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then
+    raise exception 'Admin privileges required.';
+  end if;
+
+  if p_entries is null or jsonb_typeof(p_entries) <> 'array' then
+    raise exception 'Entries must be a JSON array.';
+  end if;
+
+  for e in select * from jsonb_array_elements(p_entries) loop
+    v_n := v_n + 1;
+    v_english := nullif(trim(e->>'english'), '');
+    v_idoma := nullif(trim(e->>'idoma'), '');
+    if v_english is null or v_idoma is null or nullif(trim(e->>'id'), '') is null then
+      v_bad := v_bad + 1;
+      continue;
+    end if;
+
+    v_code := 'GLOS_' || trim(e->>'id');
+    v_cat := coalesce(nullif(trim(e->>'category'), ''), 'General');
+
+    -- some source entries carry an inline correction: "WRONG (errata: RIGHT)"
+    v_orig := null;
+    v_fix := substring(v_idoma from '(?i)\(errata:\s*([^)]*)\)');
+    if v_fix is not null and trim(v_fix) <> '' then
+      v_orig := nullif(trim(regexp_replace(v_idoma, '\s*\(errata:[^)]*\)', '', 'i')), '');
+      v_idoma := trim(v_fix);
+    end if;
+
+    v_note := 'Source: ' || coalesce(nullif(trim(p_source), ''), 'Common terms glossary')
+      || '. Spelling and pronunciation are a guide only; verify aloud with a native speaker.'
+      || coalesce(' Original listing: ' || v_orig || '.', '')
+      || coalesce(' ' || nullif(trim(e->>'note'), ''), '');
+
+    -- already imported before? refresh its text only
+    select id into v_existing from public.phrases where phrase_code = v_code;
+    if v_existing is not null then
+      update public.phrases set
+        section = 'Glossary: ' || v_cat,
+        english_term = v_english,
+        idoma_term = v_idoma,
+        syllables = nullif(trim(e->>'syllables'), ''),
+        phonetic_hint = nullif(trim(e->>'pronunciation'), ''),
+        clinical_note = v_note
+      where id = v_existing;
+      v_upd := v_upd + 1;
+      continue;
+    end if;
+
+    -- same English as an existing term (clinical terms preferred)?
+    select * into v_match
+    from public.phrases
+    where english_normalized = lower(trim(regexp_replace(v_english, '\s+', ' ', 'g')))
+      and variation_of_id is null
+      and phrase_code is distinct from v_code
+    order by (entry_kind = 'clinical') desc, created_at asc
+    limit 1;
+
+    if v_match.id is not null then
+      if exists (
+        select 1
+        from unnest(string_to_array(coalesce(v_match.idoma_term, '') || '/' || coalesce(v_match.alala_term, ''), '/')) as part
+        where public.norm_idoma_text(part) <> ''
+          and public.norm_idoma_text(part) = public.norm_idoma_text(v_idoma)
+      ) then
+        v_same := v_same + 1;
+        continue;
+      end if;
+
+      insert into public.phrases (
+        phrase_code, section, english_term, idoma_term, syllables, phonetic_hint, clinical_note,
+        verification_status, entry_kind, variation_of_id, variation_label,
+        is_published, sort_order, created_by_contributor_id
+      ) values (
+        v_code, 'Glossary: ' || v_cat, v_english, v_idoma,
+        nullif(trim(e->>'syllables'), ''), nullif(trim(e->>'pronunciation'), ''), v_note,
+        'unconfirmed', 'glossary', v_match.id, 'Glossary variant',
+        true, 100000 + v_n, v_admin.id
+      );
+      v_var := v_var + 1;
+    else
+      insert into public.phrases (
+        phrase_code, section, english_term, idoma_term, syllables, phonetic_hint, clinical_note,
+        verification_status, entry_kind, is_published, sort_order, created_by_contributor_id
+      ) values (
+        v_code, 'Glossary: ' || v_cat, v_english, v_idoma,
+        nullif(trim(e->>'syllables'), ''), nullif(trim(e->>'pronunciation'), ''), v_note,
+        'unconfirmed', 'glossary', true, 100000 + v_n, v_admin.id
+      );
+      v_ins := v_ins + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'processed', v_n, 'inserted', v_ins, 'variations', v_var,
+    'skipped_identical', v_same, 'skipped_invalid', v_bad, 'updated', v_upd
+  );
 end;
 $$;
 
