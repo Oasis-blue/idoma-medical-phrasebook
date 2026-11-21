@@ -196,7 +196,9 @@ drop policy if exists "Public read idoma audio" on storage.objects;
 create policy "Public read idoma audio"
 on storage.objects for select using (bucket_id = 'idoma-audio');
 
--- 9. Drop old overloads of functions whose signature changed ------------------
+-- 9. Drop every existing version of the app's functions (live copies may have different
+--    signatures or parameter defaults, which CREATE OR REPLACE refuses to change).
+--    set_updated_at is left alone because triggers depend on it. ------------------
 do $$
 declare
   r record;
@@ -206,7 +208,13 @@ begin
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('submit_phrase_entry', 'admin_upsert_phrase')
+      and p.proname in (
+        'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
+        'register_audio_clip', 'admin_list_contributors', 'admin_upsert_contributor',
+        'admin_delete_contributor', 'admin_list_submissions', 'admin_review_submission',
+        'admin_list_audio_clips', 'admin_review_audio_clip', 'admin_upsert_phrase',
+        'admin_set_setting'
+      )
   loop
     execute format('drop function if exists %s', r.func_sig);
   end loop;
