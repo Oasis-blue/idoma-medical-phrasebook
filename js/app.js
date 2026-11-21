@@ -930,6 +930,7 @@
       .replace(/\x3e/g, "\x26gt;")
       .replace(/\x22/g, "\x26quot;");
   }
+
   function bindEvents() {
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
@@ -1162,7 +1163,7 @@
           $("listenRecordBtn").textContent = "Listen for Best Match";
           $("listenStatus").textContent = "Analyzing speech...";
 
-         const result = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+          const result = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
           const matches = Array.isArray(result) ? result : (result.matches || []);
           const transcript = Array.isArray(result) ? null : result.transcript;
           const asrError = Array.isArray(result) ? null : result.asrError;
@@ -1171,7 +1172,11 @@
             ? `<div class="tone-alert" style="margin-top:0; margin-bottom:10px; background:var(--surface-alt); color:var(--text); border-color:var(--accent);">
                  <strong>AI Heard (Idoma Transcription):</strong> "${escapeHtml(transcript)}"
                </div>`
-            : "";
+            : (asrError
+                ? `<div class="clinical-note" style="margin-top:0; margin-bottom:10px;">
+                     <strong>Cloud ASR Status:</strong> ${escapeHtml(asrError)}
+                   </div>`
+                : "");
 
           if (matches.length === 0) {
             const hasAnyAudio = Object.keys(audioMap).length > 0;
@@ -1233,7 +1238,7 @@
     });
   }
 
- async function init() {
+  async function init() {
     try {
       bindEvents();
       toggleSubFormMode();
@@ -1280,5 +1285,6 @@
       setStatusBanner("Startup error: " + (err?.message || err), "warn");
     }
   }
+
   document.addEventListener("DOMContentLoaded", init);
 })();
