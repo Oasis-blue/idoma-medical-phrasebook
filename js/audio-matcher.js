@@ -32,19 +32,89 @@
     });
   }
 
+  // --- Convert browser MediaRecorder blob (webm/mp4/ogg) to 16kHz Mono PCM WAV ---
+  async function convertBlobToWav16k(blob) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const decodeCtx = new AudioCtx();
+    try {
+      const arrayBuf = await blob.arrayBuffer();
+      const decoded = await decodeCtx.decodeAudioData(arrayBuf);
+
+      const targetRate = 16000;
+      const frameCount = Math.max(1, Math.ceil(decoded.duration * targetRate));
+      const offlineCtx = new OfflineAudioContext(1, frameCount, targetRate);
+      const source = offlineCtx.createBufferSource();
+      source.buffer = decoded;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+
+      const rendered = await offlineCtx.startRendering();
+      const samples = rendered.getChannelData(0);
+
+      const dataBytes = samples.length * 2;
+      const wavBuf = new ArrayBuffer(44 + dataBytes);
+      const view = new DataView(wavBuf);
+
+      const writeStr = (offset, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+      };
+
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + dataBytes, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, targetRate, true);
+      view.setUint32(28, targetRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, dataBytes, true);
+
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++, offset += 2) {
+        const clamped = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+      }
+
+      return new Blob([wavBuf], { type: "audio/wav" });
+    } finally {
+      await decodeCtx.close();
+    }
+  }
+
+  function getActiveAsrUrl() {
+    return (
+      window.APP_CONFIG?.DYNAMIC_ASR_URL ||
+      window.APP_CONFIG?.IDOMA_ASR_URL ||
+      ""
+    ).trim().replace(/\/+$/, "");
+  }
+
   // --- Cloud OmniASR / MMS Transcription via Gradio API ---
   async function transcribeViaMMS(patientBlob) {
-    const baseUrl = (window.APP_CONFIG?.IDOMA_ASR_URL || "").replace(/\/+$/, "");
-    if (!baseUrl) return { transcript: null, error: "IDOMA_ASR_URL is empty in js/config.js" };
+    const baseUrl = getActiveAsrUrl();
+    if (!baseUrl) return { transcript: null, error: "IDOMA_ASR_URL is not configured" };
     if (!navigator.onLine) return { transcript: null, error: "Device is offline" };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000);
 
     try {
+      let uploadBlob = patientBlob;
+      let uploadName = "patient.webm";
+      try {
+        uploadBlob = await convertBlobToWav16k(patientBlob);
+        uploadName = "patient.wav";
+      } catch {
+        // Keep original blob if WebAudio decoding is unavailable
+      }
+
       // 1. Upload audio blob to Gradio server
       const form = new FormData();
-      form.append("files", patientBlob, "patient.webm");
+      form.append("files", uploadBlob, uploadName);
 
       const uploadRes = await fetch(`${baseUrl}/gradio_api/upload`, {
         method: "POST",
@@ -114,6 +184,59 @@
           ? "Colab timed out (25s) — server may be asleep"
           : `Could not reach Colab (${err.message})`
       };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // --- Optional Render AI Phonetic Matcher ---
+  async function matchViaRenderAI(transcript, candidatePhrases, audioMap) {
+    const matcherUrl = (window.APP_CONFIG?.AI_MATCHER_URL || "").trim().replace(/\/+$/, "");
+    if (!matcherUrl || !navigator.onLine) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const compactCandidates = candidatePhrases
+        .filter((p) => p.idoma || p.alala)
+        .slice(0, 250)
+        .map((p) => ({
+          id: p.id,
+          english: p.english,
+          idoma: p.idoma || "",
+          alala: p.alala || "",
+          phonetic: p.phonetic || ""
+        }));
+
+      const res = await fetch(`${matcherUrl}/api/idoma-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript, candidates: compactCandidates }),
+        signal: controller.signal
+      });
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      const rawMatches = Array.isArray(data?.matches) ? data.matches : [];
+      if (rawMatches.length === 0) return null;
+
+      const phraseById = new Map(candidatePhrases.map((p) => [String(p.id), p]));
+      const mapped = [];
+      for (const item of rawMatches.slice(0, 3)) {
+        const phrase = phraseById.get(String(item.id));
+        if (!phrase) continue;
+        mapped.push({
+          phrase,
+          confidence: Math.min(95, Math.max(45, Number(item.confidence) || 75)),
+          hasAudio: Boolean(audioMap[phrase.id]?.url),
+          transcript,
+          engine: "render-ai"
+        });
+      }
+      return mapped.length > 0 ? mapped : null;
+    } catch {
+      return null;
     } finally {
       clearTimeout(timer);
     }
@@ -246,7 +369,6 @@
     scored.sort((a, b) => a.dist - b.dist);
     if (scored.length === 0) return [];
 
-    // Stricter gate so unrelated speech/noise doesn't default to a single clip like "ipeyi"
     const MAX_ACCEPTABLE_DIST = 0.85;
     if (patientFrames.length < 6 || scored[0].dist > MAX_ACCEPTABLE_DIST) {
       return [];
@@ -272,16 +394,23 @@
   async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
     // 1. Try cloud OmniASR speech recognition first if configured & online
     const asr = await transcribeViaMMS(patientBlob);
-    if (asr && asr.transcript && window.ClinicalSearch) {
-      const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, asr.transcript);
-      const matches = ranked.slice(0, 3).map((r) => ({
-        phrase: r.phrase,
-        confidence: Math.min(95, Math.max(45, r.score)),
-        hasAudio: Boolean(audioMap[r.phrase.id]?.url),
-        transcript: asr.transcript,
-        engine: "omniasr"
-      }));
-      return { transcript: asr.transcript, asrError: null, engine: "omniasr", matches };
+    if (asr && asr.transcript) {
+      const aiMatches = await matchViaRenderAI(asr.transcript, candidatePhrases, audioMap);
+      if (aiMatches) {
+        return { transcript: asr.transcript, asrError: null, engine: "render-ai", matches: aiMatches };
+      }
+
+      if (window.ClinicalSearch) {
+        const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, asr.transcript);
+        const matches = ranked.slice(0, 3).map((r) => ({
+          phrase: r.phrase,
+          confidence: Math.min(95, Math.max(45, r.score)),
+          hasAudio: Boolean(audioMap[r.phrase.id]?.url),
+          transcript: asr.transcript,
+          engine: "omniasr"
+        }));
+        return { transcript: asr.transcript, asrError: null, engine: "omniasr", matches };
+      }
     }
 
     // 2. Fallback to offline MFCC + DTW acoustic matching
@@ -297,6 +426,7 @@
   window.AudioMatcher = {
     startRecording,
     stopRecording,
+    convertBlobToWav16k,
     matchPatientSpeech
   };
 })();
