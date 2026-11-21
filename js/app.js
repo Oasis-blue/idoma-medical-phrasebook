@@ -622,6 +622,7 @@ function renderGuideToneExamples() {
       const pendingVols = pendingAll.filter((s) => s.section === "Volunteer Application" || s.submission_type === "volunteer_request");
       const pendingSubs = pendingAll.filter((s) => s.section !== "Volunteer Application" && s.submission_type !== "volunteer_request");
       const pendingAudio = data.audioClips.filter((a) => a.approval_status === "pending");
+      const approvedAudioCount = Object.keys(audioMap).length;
 
       container.innerHTML = `
         <div class="panel" style="margin-bottom:16px;">
@@ -639,9 +640,14 @@ function renderGuideToneExamples() {
                   : "Import entries from data/seed-phrases.json into your live Supabase table so contributors can attach audio clips and edits."}
               </p>
             </div>
-            <button type="button" class="btn ${isSynced ? "btn-secondary" : "btn-primary"}" id="importSeedBtn">
-              ${isSynced ? "Re-Sync Seed JSON" : "Import Seed JSON to DB"}
-            </button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary" id="exportDatasetBtn">
+                Export Speech Dataset (${approvedAudioCount} clips)
+              </button>
+              <button type="button" class="btn ${isSynced ? "btn-secondary" : "btn-primary"}" id="importSeedBtn">
+                ${isSynced ? "Re-Sync Seed JSON" : "Import Seed JSON to DB"}
+              </button>
+            </div>
           </div>
           <p id="importSeedProgress" class="small-note muted" style="margin:8px 0 0;"></p>
         </div>
