@@ -118,6 +118,7 @@
       clearTimeout(timer);
     }
   }
+
   // --- Local Offline MFCC + DTW Acoustic Fingerprinting ---
   async function decodeAndTrim(blob) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -267,10 +268,10 @@
       });
   }
 
- async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
+  async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
     // 1. Try cloud OmniASR speech recognition first if configured & online
     const asr = await transcribeViaMMS(patientBlob);
-    if (asr.transcript && window.ClinicalSearch) {
+    if (asr && asr.transcript && window.ClinicalSearch) {
       const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, asr.transcript);
       const matches = ranked.slice(0, 3).map((r) => ({
         phrase: r.phrase,
@@ -284,11 +285,7 @@
 
     // 2. Fallback to offline MFCC + DTW acoustic matching
     const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
-    return { transcript: null, asrError: asr.error, engine: "offline-dtw", matches: dtwMatches };
-  }
-    // 2. Fallback to offline MFCC + DTW acoustic matching
-    const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
-    return { transcript: null, engine: "offline-dtw", matches: dtwMatches };
+    return { transcript: null, asrError: asr ? asr.error : null, engine: "offline-dtw", matches: dtwMatches };
   }
 
   window.AudioMatcher = {
