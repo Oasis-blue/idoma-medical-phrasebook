@@ -119,10 +119,16 @@ create table if not exists public.audio_clips (
   created_at timestamptz not null default now()
 );
 
+-- Labels for speech-model training: which dialect was spoken, and the exact written text
+alter table public.audio_clips add column if not exists dialect text;      -- 'idoma' | 'alala' | 'other'
+alter table public.audio_clips add column if not exists spoken_text text;  -- exactly what the speaker said
+
 create index if not exists idx_audio_phrase_status on public.audio_clips (phrase_id, approval_status, is_primary desc);
 
-create unique index if not exists uq_one_primary_approved_audio
-  on public.audio_clips (phrase_id)
+-- One primary approved clip per phrase PER DIALECT (so an Alala clip can't demote the Idoma one)
+drop index if exists public.uq_one_primary_approved_audio;
+create unique index if not exists uq_one_primary_approved_audio_per_dialect
+  on public.audio_clips (phrase_id, (coalesce(dialect, '')))
   where is_primary = true and approval_status = 'approved';
 
 -- 5. App settings (live ASR URL etc.) ------------------------------------------
@@ -336,7 +342,9 @@ create or replace function public.register_audio_clip(
   p_storage_path text,
   p_mime_type text,
   p_duration_ms integer,
-  p_dialect_note text
+  p_dialect_note text,
+  p_dialect text,
+  p_spoken_text text
 )
 returns public.audio_clips
 language plpgsql security definer set search_path = public as $$
@@ -344,6 +352,7 @@ declare
   v_actor public.contributors%rowtype;
   v_today_audio integer;
   v_clip public.audio_clips%rowtype;
+  v_dialect text := nullif(lower(trim(p_dialect)), '');
 begin
   select * into v_actor
   from public.contributors
@@ -351,6 +360,14 @@ begin
 
   if v_actor.id is null then
     raise exception 'Invalid or inactive contributor code.';
+  end if;
+
+  if v_dialect is not null and v_dialect not in ('idoma', 'alala', 'other') then
+    raise exception 'Dialect must be idoma, alala or other.';
+  end if;
+
+  if nullif(trim(p_spoken_text), '') is null then
+    raise exception 'Please type exactly what you said in the recording.';
   end if;
 
   select count(*) into v_today_audio
@@ -363,9 +380,11 @@ begin
   end if;
 
   insert into public.audio_clips (
-    phrase_id, recorded_by_contributor_id, storage_path, mime_type, duration_ms, dialect_note, approval_status
+    phrase_id, recorded_by_contributor_id, storage_path, mime_type, duration_ms,
+    dialect_note, dialect, spoken_text, approval_status
   ) values (
-    p_phrase_id, v_actor.id, p_storage_path, coalesce(p_mime_type, 'audio/webm'), p_duration_ms, nullif(trim(p_dialect_note), ''), 'pending'
+    p_phrase_id, v_actor.id, p_storage_path, coalesce(p_mime_type, 'audio/webm'), p_duration_ms,
+    nullif(trim(p_dialect_note), ''), v_dialect, trim(p_spoken_text), 'pending'
   ) returning * into v_clip;
 
   return v_clip;
@@ -556,7 +575,8 @@ begin
   end if;
 
   if p_decision = 'approved' and coalesce(p_set_primary, true) then
-    update public.audio_clips set is_primary = false where phrase_id = v_clip.phrase_id;
+    update public.audio_clips set is_primary = false
+    where phrase_id = v_clip.phrase_id and coalesce(dialect, '') = coalesce(v_clip.dialect, '');
   end if;
 
   update public.audio_clips set
