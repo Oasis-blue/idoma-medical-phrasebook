@@ -302,7 +302,7 @@
     });
   }
 
-  async function uploadAudioRecording({ phraseId, blob, mimeType, durationMs, dialectNote }, session) {
+  async function uploadAudioRecording({ phraseId, blob, mimeType, durationMs, dialectNote, dialect, spokenText }, session) {
     if (!session || !session.access_code) {
       throw new Error("Sign in with a contributor or admin access code to record and submit audio.");
     }
@@ -325,7 +325,9 @@
         p_storage_path: filePath,
         p_mime_type: mimeType || "audio/webm",
         p_duration_ms: durationMs || null,
-        p_dialect_note: dialectNote || null
+        p_dialect_note: dialectNote || null,
+        p_dialect: dialect || null,
+        p_spoken_text: spokenText || null
       });
       if (rpcErr) throw new Error(rpcErr.message);
       return data;
@@ -342,6 +344,8 @@
       mime_type: mimeType || "audio/webm",
       duration_ms: durationMs || null,
       dialect_note: dialectNote || "",
+      dialect: dialect || "",
+      spoken_text: spokenText || "",
       is_primary: false,
       approval_status: "pending",
       created_at: new Date().toISOString()
