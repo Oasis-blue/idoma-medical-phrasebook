@@ -1,0 +1,19 @@
+{
+  "name": "Idoma Medical Clinical Phrasebook",
+  "short_name": "Idoma Med",
+  "description": "Offline-capable English-to-Idoma & regional dialects clinical bedside phrasebook with tone warnings and native audio.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#0f766e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f766e'/%3E%3Crect x='220' y='104' width='72' height='304' rx='24' fill='white'/%3E%3Crect x='104' y='220' width='304' height='72' rx='24' fill='white'/%3E%3Cpath d='M376 147A152 152 0 0 1 419 256' fill='none' stroke='%2399f6e4' stroke-width='34' stroke-linecap='round'/%3E%3Cpath d='M136 365A152 152 0 0 1 93 256' fill='none' stroke='%2399f6e4' stroke-width='34' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
