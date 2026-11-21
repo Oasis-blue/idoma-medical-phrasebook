@@ -581,10 +581,21 @@
         <div class="panel" style="margin-bottom:16px;">
           <div class="panel-header-row">
             <div>
-              <h3>Database Seed Sync (${seedPhrases.length} entries in seed-phrases.json)</h3>
-              <p class="muted small-note">Import or update all entries from <code>data/seed-phrases.json</code> into your live Supabase table so contributors can attach audio clips and edits.</p>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <h3 style="margin:0;">Database Seed Sync</h3>
+                <span class="badge ${isSynced ? "badge-verified" : "badge-unconfirmed"}">
+                  ${DB.isLive() ? `Live Supabase: ${liveDbCount} entries · Seed JSON: ${seedPhrases.length}` : "Offline / Demo Mode"}
+                </span>
+              </div>
+              <p class="muted small-note" style="margin-top:6px;">
+                ${isSynced
+                  ? "Your live Supabase database is up to date with seed-phrases.json. Re-run anytime you add new entries to the JSON file."
+                  : "Import entries from data/seed-phrases.json into your live Supabase table so contributors can attach audio clips and edits."}
+              </p>
             </div>
-            <button type="button" class="btn btn-primary" id="importSeedBtn">Import / Sync Seed JSON to DB</button>
+            <button type="button" class="btn ${isSynced ? "btn-secondary" : "btn-primary"}" id="importSeedBtn">
+              ${isSynced ? "Re-Sync Seed JSON" : "Import Seed JSON to DB"}
+            </button>
           </div>
           <p id="importSeedProgress" class="small-note muted" style="margin:8px 0 0;"></p>
         </div>
