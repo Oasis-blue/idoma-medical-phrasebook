@@ -1241,11 +1241,23 @@
       updateTrayBadge();
       renderSessionUI();
 
+      // 1. Render seed phrases immediately so the screen is usable right away
       seedPhrases = await DB.loadSeedPhrases();
-      const fetched = await DB.fetchPhrases(seedPhrases);
+      phrases = seedPhrases;
+      renderSectionPills();
+      populateAudioPhraseSelect();
+      renderPhrases();
+
+      // 2. Fetch live Supabase phrases, approved audio, and credits in parallel
+      const [fetched, liveAudioMap, liveCredits] = await Promise.all([
+        DB.fetchPhrases(seedPhrases),
+        DB.fetchApprovedAudioMap(),
+        DB.fetchPublicCredits()
+      ]);
+
       phrases = fetched.phrases;
-      audioMap = await DB.fetchApprovedAudioMap();
-      credits = await DB.fetchPublicCredits();
+      audioMap = liveAudioMap;
+      credits = liveCredits;
 
       renderSectionPills();
       populateAudioPhraseSelect();
