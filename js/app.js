@@ -212,30 +212,36 @@
   }
 
   function getFilteredPhrases() {
-    const q = ($("searchInput")?.value || "").trim().toLowerCase();
-    return phrases.filter((p) => {
+    const q = ($("searchInput")?.value || "").trim();
+    const basePool = phrases.filter((p) => {
       if (activeSection !== "ALL" && p.section !== activeSection) return false;
       if (activeStatus !== "ALL" && p.status !== activeStatus) return false;
       if (dialectOnly && !p.alala && !p.variationLabel) return false;
-      if (!q) return true;
-      const hay = [
-        p.english,
-        p.idoma,
-        p.alala,
-        p.variationLabel,
-        p.syllables,
-        p.phonetic,
-        p.tone,
-        p.clinical,
-        p.section,
-        p.subsection
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
+      return true;
     });
-  }
 
+    if (!q) {
+      return basePool.map((p) => ({ ...p, _matchedVia: null }));
+    }
+
+    if (window.ClinicalSearch) {
+      return window.ClinicalSearch.searchAndRank(basePool, q).map((item) => ({
+        ...item.phrase,
+        _matchedVia: item.matchedVia
+      }));
+    }
+
+    const low = q.toLowerCase();
+    return basePool
+      .filter((p) =>
+        [p.english, p.idoma, p.alala, p.variationLabel, p.syllables, p.phonetic, p.tone, p.clinical, p.section, p.subsection]
+          .join(" ")
+          .toLowerCase()
+          .includes(low)
+      )
+      .map((p) => ({ ...p, _matchedVia: null }));
+  }
+  
   function statusBadgeHtml(status) {
     if (status === "verified") return `<span class="badge badge-verified">Verified</span>`;
     if (status === "missing") return `<span class="badge badge-missing">Pending / Blank</span>`;
@@ -258,6 +264,7 @@
             <span class="sec-tag">${escapeHtml(p.section)}${p.subsection ? " · " + escapeHtml(p.subsection) : ""}</span>
             ${statusBadgeHtml(p.status)}
           </div>
+          ${p._matchedVia ? `<div class="muted small-note" style="margin-bottom:4px;">Matched via synonym/spelling: <strong>${escapeHtml(p._matchedVia)}</strong></div>` : ""}
           <h3 class="english-term">${escapeHtml(p.english)}</h3>
           <div class="idoma-row">
             <span class="idoma-term">${p.idoma ? escapeHtml(p.idoma) : "<em>No general Idoma entry yet</em>"}</span>
