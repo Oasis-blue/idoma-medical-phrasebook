@@ -649,7 +649,7 @@
       const pendingVols = pendingAll.filter((s) => s.section === "Volunteer Application" || s.submission_type === "volunteer_request");
       const pendingSubs = pendingAll.filter((s) => s.section !== "Volunteer Application" && s.submission_type !== "volunteer_request");
       const pendingAudio = data.audioClips.filter((a) => a.approval_status === "pending");
-      const approvedAudioCount = Object.keys(audioMap).length;
+      const approvedAudioCount = data.audioClips.filter((c) => c.approval_status === "approved").length;
       const currentAsrUrl = window.APP_CONFIG?.DYNAMIC_ASR_URL || window.APP_CONFIG?.IDOMA_ASR_URL || "";
 
       container.innerHTML = `
@@ -786,6 +786,8 @@
               return `
                 <div class="mod-item">
                   <strong>Phrase:</strong> ${escapeHtml(phrase ? phrase.english : a.phrase_id)}<br/>
+                  ${a.dialect ? `<strong>Dialect:</strong> ${escapeHtml(a.dialect)}<br/>` : ""}
+                  ${a.spoken_text ? `<strong>Written as:</strong> ${escapeHtml(a.spoken_text)}<br/>` : "<em>No written text saved.</em><br/>"}
                   ${a.dialect_note ? `<strong>Dialect note:</strong> ${escapeHtml(a.dialect_note)}<br/>` : ""}
                   ${src ? `<audio controls src="${escapeHtml(src)}" class="audio-player"></audio>` : ""}
                   <div class="btn-row">
@@ -839,34 +841,49 @@
 
       $("exportDatasetBtn")?.addEventListener("click", () => {
         const dataset = [];
-        for (const p of phrases) {
-          const clip = audioMap[p.id];
-          if (!clip || !clip.url) continue;
-          const transcript = (p.idoma || p.alala || "").trim();
-          if (!transcript) continue;
-
+        const bucket = window.APP_CONFIG?.AUDIO_BUCKET || "idoma-audio";
+        for (const c of data.audioClips) {
+          if (c.approval_status !== "approved") continue;
+          let url = c.data_url || "";
+          if (!url && window.APP_CONFIG?.SUPABASE_URL && c.storage_path) {
+            url = `${window.APP_CONFIG.SUPABASE_URL}/storage/v1/object/public/${bucket}/${c.storage_path}`;
+          }
+          if (!url) continue;
+          const phrase = phrases.find((p) => String(p.id) === String(c.phrase_id));
+          const spoken = String(c.spoken_text || "").trim();
+          const issues = [];
+          if (!spoken) issues.push("no_written_text");
+          if (/[\/()]/.test(spoken)) issues.push("has_alternatives_or_brackets");
+          if (!c.dialect) issues.push("no_dialect");
           dataset.push({
-            phrase_id: p.id,
-            audio_url: clip.url,
-            transcription: transcript,
-            english_meaning: p.english,
-            dialect: p.variationLabel || (p.alala && !p.idoma ? "Alala (Orokam)" : "Idoma (General)"),
-            section: p.section,
-            verified: p.status === "verified"
+            clip_id: c.id,
+            phrase_id: c.phrase_id,
+            audio_url: url,
+            transcription: spoken,
+            dialect: c.dialect || "",
+            dialect_note: c.dialect_note || "",
+            speaker_id: c.recorded_by_contributor_id || "",
+            duration_ms: c.duration_ms || null,
+            mime_type: c.mime_type || "",
+            english_meaning: phrase ? phrase.english : "",
+            section: phrase ? phrase.section : "",
+            ready_for_training: issues.length === 0,
+            issues
           });
         }
 
         if (dataset.length === 0) {
-          setStatusBanner("No approved audio clips with transcriptions to export yet.", "warn");
+          setStatusBanner("No approved audio clips to export yet.", "warn");
           return;
         }
 
+        const ready = dataset.filter((r) => r.ready_for_training).length;
         const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `idoma-clinical-speech-dataset-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        setStatusBanner(`Exported ${dataset.length} labeled Idoma audio clips for AI training.`, "success");
+        const el = document.createElement("a");
+        el.href = URL.createObjectURL(blob);
+        el.download = `idoma-clinical-speech-dataset-${new Date().toISOString().slice(0, 10)}.json`;
+        el.click();
+        setStatusBanner(`Exported ${dataset.length} approved clips (${ready} ready for training; the rest list their issues).`, "success");
       });
 
       $("contribForm")?.addEventListener("submit", async (e) => {
@@ -1172,6 +1189,28 @@
       }
     });
 
+    function refreshSpokenPrefill() {
+      const sel = $("audioPhraseSelect");
+      const textEl = $("audioSpokenText");
+      const hintEl = $("audioSpokenHint");
+      if (!sel || !textEl) return;
+      const p = phrases.find((x) => String(x.id) === String(sel.value));
+      const dialect = $("audioDialect") ? $("audioDialect").value : "idoma";
+      const entry = p ? String((dialect === "alala" ? p.alala : p.idoma) || "").trim() : "";
+      const first = entry.split("/")[0].replace(/\(.*?\)/g, "").replace(/["“”]/g, "").trim();
+      textEl.value = first;
+      if (hintEl) {
+        hintEl.textContent = entry
+          ? `Phrasebook entry: ${entry}. Keep only the version you actually say.`
+          : "No written form yet for this dialect. Type exactly what you say.";
+      }
+    }
+    $("audioPhraseSelect")?.addEventListener("change", refreshSpokenPrefill);
+    $("audioDialect")?.addEventListener("change", refreshSpokenPrefill);
+    $("audioSpokenText")?.addEventListener("focus", () => {
+      if (!$("audioSpokenText").value) refreshSpokenPrefill();
+    });
+
     $("recordToggleBtn")?.addEventListener("click", async () => {
       try {
         if (!session) {
@@ -1209,17 +1248,24 @@
           return;
         }
         if (!recordedDraft) throw new Error("Record a voice clip first.");
+        const spokenText = $("audioSpokenText").value.trim();
+        if (!spokenText) throw new Error("Type exactly what you said in this recording before submitting.");
+        if (/[\/()]/.test(spokenText)) throw new Error("Use one version only: remove '/' alternatives and brackets so the text matches what you said.");
         await DB.uploadAudioRecording({
           phraseId: $("audioPhraseSelect").value,
           blob: recordedDraft.blob,
           mimeType: recordedDraft.mimeType,
           durationMs: recordedDraft.durationMs,
-          dialectNote: $("audioDialectNote").value.trim()
+          dialectNote: $("audioDialectNote").value.trim(),
+          dialect: $("audioDialect").value,
+          spokenText
         }, session);
         recordedDraft = null;
         $("saveAudioBtn").disabled = true;
         $("audioPreview").hidden = true;
         $("audioDialectNote").value = "";
+        $("audioSpokenText").value = "";
+        if ($("audioSpokenHint")) $("audioSpokenHint").textContent = "";
         $("recordStateText").textContent = "Submitted! Audio will go live once approved by Admin.";
         setStatusBanner("Voice clip submitted for admin review.", "success");
         if (session && session.is_admin) await renderAdminDashboard();
