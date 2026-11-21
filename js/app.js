@@ -925,12 +925,11 @@
 
   function escapeHtml(str) {
     return String(str ?? "")
-      .replace(/&/g, "&")
-      .replace(/</g, "<")
-      .replace(/>/g, ">")
-      .replace(/"/g, """);
+      .replace(/\x26/g, "\x26amp;")
+      .replace(/\x3c/g, "\x26lt;")
+      .replace(/\x3e/g, "\x26gt;")
+      .replace(/\x22/g, "\x26quot;");
   }
-
   function bindEvents() {
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
