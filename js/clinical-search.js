@@ -54,7 +54,12 @@
     return normalizeText(str).replace(/[\s'-]+/g, "");
   }
 
-  // Levenshtein distance supporting up to maxDist edits (e.g., wangabo -> unwangabo)
+  // Collapses doubled letters from CTC/ASR output (e.g. "ikkpei" -> "ikpei")
+  function collapseRepeats(str) {
+    return String(str || "").replace(/([a-z0-9])\1+/g, "$1");
+  }
+
+  // Levenshtein distance supporting up to maxDist edits
   function editDistance(a, b, maxDist = 2) {
     if (a === b) return 0;
     if (!a.length) return b.length;
@@ -77,7 +82,7 @@
     const clean = normalizeText(rawQuery);
     if (!clean) return { direct: [], synonyms: [] };
 
-    const directSet = new Set([clean]);
+    const directSet = new Set([clean, collapseRepeats(clean)]);
     const synonymSet = new Set();
 
     // Check full phrase synonyms first (e.g., "throwing up", "running stomach")
@@ -88,6 +93,7 @@
     const tokens = clean.split(" ").filter((w) => w.length >= 2);
     for (const tok of tokens) {
       directSet.add(tok);
+      directSet.add(collapseRepeats(tok));
       if (synonymMap.has(tok)) {
         synonymMap.get(tok).forEach((s) => synonymSet.add(s));
       }
@@ -126,19 +132,22 @@
       return { matched: true, score: 100, matchedVia: null };
     }
 
-    // 1b. Space-collapsed match for split/joined Idoma words (e.g., "uwangabo" / "wangabo" -> "Unwanga bo")
+    // 1b. Space-collapsed & repeat-collapsed match for Idoma/Alala (e.g., "ikkpei" -> "ikpeyi", "wangabo" -> "Unwanga bo")
     const compactQuery = compactText(cleanQuery);
+    const compactQueryCollapsed = collapseRepeats(compactQuery);
     const compactIdoma = compactText(phrase.idoma);
     const compactAlala = compactText(phrase.alala);
-    if (compactQuery.length >= 4) {
-      if ((compactIdoma && compactIdoma.includes(compactQuery)) || (compactAlala && compactAlala.includes(compactQuery))) {
+
+    for (const cq of [compactQuery, compactQueryCollapsed]) {
+      if (cq.length < 4) continue;
+      if ((compactIdoma && compactIdoma.includes(cq)) || (compactAlala && compactAlala.includes(cq))) {
         return { matched: true, score: 92, matchedVia: phrase.idoma || phrase.alala };
       }
-      const allowedEdits = compactQuery.length >= 6 ? 2 : 1;
-      if (compactIdoma && editDistance(compactQuery, compactIdoma, allowedEdits) <= allowedEdits) {
+      const allowedEdits = cq.length >= 5 ? 2 : 1;
+      if (compactIdoma && editDistance(cq, compactIdoma, allowedEdits) <= allowedEdits) {
         return { matched: true, score: 86, matchedVia: phrase.idoma };
       }
-      if (compactAlala && editDistance(compactQuery, compactAlala, allowedEdits) <= allowedEdits) {
+      if (compactAlala && editDistance(cq, compactAlala, allowedEdits) <= allowedEdits) {
         return { matched: true, score: 86, matchedVia: phrase.alala };
       }
     }
@@ -165,11 +174,11 @@
       }
     }
 
-    // 4. Fuzzy typo / prefix-drop match on individual words >= 4 chars
+    // 4. Fuzzy typo / doubled-letter / prefix-drop match on words >= 4 chars
     const hayWords = fullHay.split(" ").filter((w) => w.length >= 4);
     for (const qw of direct) {
       if (qw.length < 4) continue;
-      const maxEdits = qw.length >= 6 ? 2 : 1;
+      const maxEdits = qw.length >= 5 ? 2 : 1;
       for (const hw of hayWords) {
         if (editDistance(qw, hw, maxEdits) <= maxEdits) {
           return { matched: true, score: 45, matchedVia: hw };
