@@ -570,6 +570,8 @@
     container.innerHTML = "<p class='muted'>Loading moderation queues...</p>";
     try {
       const data = await DB.adminGetData(session);
+      const liveDbCount = DB.isLive() ? phrases.length : 0;
+      const isSynced = DB.isLive() && liveDbCount >= seedPhrases.length && seedPhrases.length > 0;
       const pendingAll = data.submissions.filter((s) => s.review_status === "pending");
       const pendingVols = pendingAll.filter((s) => s.section === "Volunteer Application" || s.submission_type === "volunteer_request");
       const pendingSubs = pendingAll.filter((s) => s.section !== "Volunteer Application" && s.submission_type !== "volunteer_request");
