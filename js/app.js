@@ -1208,12 +1208,14 @@ function renderGuideToneExamples() {
             return;
           }
 
-          $("listenStatus").textContent = "Candidate matches (unverified acoustic match — confirm directly with patient):";
+         $("listenStatus").textContent = "Candidate matches (confirm directly with patient):";
           $("listenMatches").innerHTML = matches.map((m) => `
             <div class="match-card">
               <div>
                 <strong>${escapeHtml(m.phrase.english)}</strong> — <span class="idoma-term">${escapeHtml(m.phrase.idoma || m.phrase.alala)}</span>
-                <div class="muted small-note">Candidate score: ${m.confidence}% · Confirm directly with patient</div>
+                <div class="muted small-note">
+                  ${m.transcript ? `Heard: "<em>${escapeHtml(m.transcript)}</em>" · ` : ""}Score: ${m.confidence}% · Confirm directly with patient
+                </div>
               </div>
               ${m.hasAudio ? `<button type="button" class="btn btn-sm btn-primary" data-match-play="${escapeHtml(audioMap[m.phrase.id].url)}">Hear Reference</button>` : ""}
             </div>
