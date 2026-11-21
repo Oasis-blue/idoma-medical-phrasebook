@@ -44,7 +44,7 @@
 
     el.innerHTML = `
       <span>${escapeHtml(msg)}</span>
-      <button type="button" class="notice-close-btn" aria-label="Dismiss notification">&times;</button>
+      <button type="button" class="notice-close-btn" aria-label="Dismiss notification">×</button>
     `;
     el.querySelector(".notice-close-btn")?.addEventListener("click", () => {
       el.hidden = true;
@@ -103,8 +103,8 @@
       switchTab("adminTab");
     });
   }
-  
-function renderGuideToneExamples() {
+
+  function renderGuideToneExamples() {
     const wrap = $("guideToneExamples");
     if (!wrap) return;
     const withTone = phrases
@@ -122,7 +122,7 @@ function renderGuideToneExamples() {
       </div>
     `).join("");
   }
-  
+
   function renderSessionUI() {
     const headerAuthBox = $("headerAuthBox");
     const loginForm = $("loginForm");
@@ -260,7 +260,7 @@ function renderGuideToneExamples() {
       )
       .map((p) => ({ ...p, _matchedVia: null }));
   }
-  
+
   function statusBadgeHtml(status) {
     if (status === "verified") return `<span class="badge badge-verified">Verified</span>`;
     if (status === "missing") return `<span class="badge badge-missing">Pending / Blank</span>`;
@@ -579,33 +579,6 @@ function renderGuideToneExamples() {
   }
 
   async function renderAdminDashboard() {
-
-    async function exportSpeechDataset(phrasesList, approvedAudioMap) {
-  const dataset = [];
-  for (const p of phrasesList) {
-    const clip = approvedAudioMap[p.id];
-    if (!clip || !clip.url) continue;
-    const transcript = (p.idoma || p.alala || "").trim();
-    if (!transcript) continue;
-
-    dataset.push({
-      phrase_id: p.id,
-      audio_url: clip.url,
-      transcription: transcript,
-      english_meaning: p.english,
-      dialect: p.variationLabel || (p.alala && !p.idoma ? "Alala (Orokam)" : "Idoma (General)"),
-      section: p.section,
-      verified: p.status === "verified"
-    });
-  }
-
-  const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `idoma-clinical-speech-dataset-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  return dataset.length;
-}
     const container = $("adminContent");
     if (!container) return;
     if (!session || !session.is_admin) {
@@ -952,10 +925,10 @@ function renderGuideToneExamples() {
 
   function escapeHtml(str) {
     return String(str ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, """);
   }
 
   function bindEvents() {
@@ -1188,19 +1161,32 @@ function renderGuideToneExamples() {
           const rec = await Matcher.stopRecording();
           isRecording = false;
           $("listenRecordBtn").textContent = "Listen for Best Match";
-          const matches = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+          $("listenStatus").textContent = "Analyzing speech...";
 
-          if (!matches || matches.length === 0) {
+          const result = await Matcher.matchPatientSpeech(rec.blob, phrases, audioMap);
+          const matches = Array.isArray(result) ? result : (result.matches || []);
+          const transcript = Array.isArray(result) ? null : result.transcript;
+
+          const transcriptBoxHtml = transcript
+            ? `<div class="tone-alert" style="margin-top:0; margin-bottom:10px; background:var(--surface-alt); color:var(--text); border-color:var(--accent);">
+                 <strong>AI Heard (Idoma Transcription):</strong> "${escapeHtml(transcript)}"
+               </div>`
+            : "";
+
+          if (matches.length === 0) {
             const hasAnyAudio = Object.keys(audioMap).length > 0;
             $("listenStatus").textContent = "";
             $("listenMatches").innerHTML = `
+              ${transcriptBoxHtml}
               <div class="match-card">
                 <div>
-                  <strong>No reliable match found</strong>
+                  <strong>No exact database card matched</strong>
                   <div class="muted small-note">
-                    ${hasAnyAudio
-                      ? "The patient's response did not closely match any recorded phrase (or background ward noise interfered). Try asking again closer to the mic, or use the response cards."
-                      : "No approved contributor audio clips are available yet to compare against."}
+                    ${transcript
+                      ? "OmniASR transcribed the speech above, though no exact entry matched in the verified glossary yet. You can search keywords in Phrase Finder or use the response cards."
+                      : (hasAnyAudio
+                          ? "The patient's response did not closely match any recorded phrase. Try closer to the mic, or use the response cards."
+                          : "No approved contributor audio clips are available yet for offline matching.")}
                   </div>
                 </div>
               </div>
@@ -1208,18 +1194,19 @@ function renderGuideToneExamples() {
             return;
           }
 
-         $("listenStatus").textContent = "Candidate matches (confirm directly with patient):";
-          $("listenMatches").innerHTML = matches.map((m) => `
-            <div class="match-card">
-              <div>
-                <strong>${escapeHtml(m.phrase.english)}</strong> — <span class="idoma-term">${escapeHtml(m.phrase.idoma || m.phrase.alala)}</span>
-                <div class="muted small-note">
-                  ${m.transcript ? `Heard: "<em>${escapeHtml(m.transcript)}</em>" · ` : ""}Score: ${m.confidence}% · Confirm directly with patient
+          $("listenStatus").textContent = "Verified database matches (confirm directly with patient):";
+          $("listenMatches").innerHTML = `
+            ${transcriptBoxHtml}
+            ${matches.map((m) => `
+              <div class="match-card">
+                <div>
+                  <strong>${escapeHtml(m.phrase.english)}</strong> — <span class="idoma-term">${escapeHtml(m.phrase.idoma || m.phrase.alala)}</span>
+                  <div class="muted small-note">Match score: ${m.confidence}% · Confirm directly with patient</div>
                 </div>
+                ${m.hasAudio ? `<button type="button" class="btn btn-sm btn-primary" data-match-play="${escapeHtml(audioMap[m.phrase.id].url)}">Hear Reference</button>` : ""}
               </div>
-              ${m.hasAudio ? `<button type="button" class="btn btn-sm btn-primary" data-match-play="${escapeHtml(audioMap[m.phrase.id].url)}">Hear Reference</button>` : ""}
-            </div>
-          `).join("");
+            `).join("")}
+          `;
           $("listenMatches").querySelectorAll("[data-match-play]").forEach((b) => {
             b.addEventListener("click", () => new Audio(b.getAttribute("data-match-play")).play().catch(() => {}));
           });
