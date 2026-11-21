@@ -192,17 +192,24 @@
   // --- Optional Render AI Phonetic Matcher ---
   async function matchViaRenderAI(transcript, candidatePhrases, audioMap) {
     const matcherUrl = (window.APP_CONFIG?.AI_MATCHER_URL || "").trim().replace(/\/+$/, "");
-    if (!matcherUrl || !navigator.onLine) return null;
+    if (!matcherUrl || !navigator.onLine) return { matches: null, error: null };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 35000);
 
     try {
-      const compactCandidates = candidatePhrases
+      const prioritized = [...candidatePhrases]
         .filter((p) => p.idoma || p.alala)
-        .slice(0, 250)
+        .sort((a, b) => {
+          const aScore = (a.status === "verified" ? 2 : 0) + (audioMap[a.id]?.url ? 1 : 0);
+          const bScore = (b.status === "verified" ? 2 : 0) + (audioMap[b.id]?.url ? 1 : 0);
+          return bScore - aScore;
+        });
+
+      const compactCandidates = prioritized
+        .slice(0, 300)
         .map((p) => ({
-          id: p.id,
+          id: String(p.id),
           english: p.english,
           idoma: p.idoma || "",
           alala: p.alala || "",
@@ -215,11 +222,14 @@
         body: JSON.stringify({ transcript, candidates: compactCandidates }),
         signal: controller.signal
       });
-      if (!res.ok) return null;
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { matches: null, error: data?.error || `Render matcher HTTP ${res.status}` };
+      }
+
       const rawMatches = Array.isArray(data?.matches) ? data.matches : [];
-      if (rawMatches.length === 0) return null;
+      if (rawMatches.length === 0) return { matches: null, error: null };
 
       const phraseById = new Map(candidatePhrases.map((p) => [String(p.id), p]));
       const mapped = [];
@@ -234,9 +244,12 @@
           engine: "render-ai"
         });
       }
-      return mapped.length > 0 ? mapped : null;
-    } catch {
-      return null;
+      return { matches: mapped.length > 0 ? mapped : null, error: null };
+    } catch (err) {
+      return {
+        matches: null,
+        error: err.name === "AbortError" ? "Render matcher timed out (35s)" : `Render matcher unreachable (${err.message})`
+      };
     } finally {
       clearTimeout(timer);
     }
@@ -396,9 +409,9 @@
     // 1. Try cloud OmniASR speech recognition first if configured & online
     const asr = await transcribeViaMMS(patientBlob);
     if (asr && asr.transcript) {
-      const aiMatches = await matchViaRenderAI(asr.transcript, candidatePhrases, audioMap);
-      if (aiMatches) {
-        return { transcript: asr.transcript, asrError: null, engine: "render-ai", matches: aiMatches };
+      const aiRes = await matchViaRenderAI(asr.transcript, candidatePhrases, audioMap);
+      if (aiRes && aiRes.matches) {
+        return { transcript: asr.transcript, asrError: null, engine: "render-ai", matches: aiRes.matches };
       }
 
       if (window.ClinicalSearch) {
@@ -410,7 +423,7 @@
           transcript: asr.transcript,
           engine: "omniasr"
         }));
-        return { transcript: asr.transcript, asrError: null, engine: "omniasr", matches };
+        return { transcript: asr.transcript, asrError: aiRes?.error || null, engine: "omniasr", matches };
       }
     }
 
@@ -431,3 +444,4 @@
     matchPatientSpeech
   };
 })();
+```[cite: 9]
