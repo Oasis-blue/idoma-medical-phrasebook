@@ -35,7 +35,8 @@
   // --- Cloud OmniASR / MMS Transcription via Gradio API ---
   async function transcribeViaMMS(patientBlob) {
     const baseUrl = (window.APP_CONFIG?.IDOMA_ASR_URL || "").replace(/\/+$/, "");
-    if (!baseUrl || !navigator.onLine) return null;
+    if (!baseUrl) return { transcript: null, error: "IDOMA_ASR_URL is empty in js/config.js" };
+    if (!navigator.onLine) return { transcript: null, error: "Device is offline" };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000);
@@ -50,46 +51,73 @@
         body: form,
         signal: controller.signal
       });
-      if (!uploadRes.ok) return null;
+      if (!uploadRes.ok) {
+        return { transcript: null, error: `Gradio upload failed (${uploadRes.status}) — check if Colab link expired` };
+      }
       const uploadedPaths = await uploadRes.json();
       const serverPath = Array.isArray(uploadedPaths) ? uploadedPaths[0] : null;
-      if (!serverPath) return null;
+      if (!serverPath) return { transcript: null, error: "Gradio upload returned no file path" };
 
-      // 2. Trigger prediction with Gradio 5+ FileData payload
-      const callRes = await fetch(`${baseUrl}/gradio_api/call/predict`, {
+      const payload = JSON.stringify({
+        data: [{ path: serverPath, meta: { _type: "gradio.FileData" } }]
+      });
+
+      // 2. Gradio 5+ names the endpoint after the Python fn (/transcribe_idoma), fallback to /predict
+      let endpoint = "transcribe_idoma";
+      let callRes = await fetch(`${baseUrl}/gradio_api/call/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: [{ path: serverPath, meta: { _type: "gradio.FileData" } }]
-        }),
+        body: payload,
         signal: controller.signal
       });
-      if (!callRes.ok) return null;
-      const { event_id } = await callRes.json();
-      if (!event_id) return null;
 
-      // 3. Read SSE result stream
-      const resultRes = await fetch(`${baseUrl}/gradio_api/call/predict/${event_id}`, {
+      if (callRes.status === 404) {
+        endpoint = "predict";
+        callRes = await fetch(`${baseUrl}/gradio_api/call/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          signal: controller.signal
+        });
+      }
+
+      if (!callRes.ok) {
+        return { transcript: null, error: `Gradio call failed (${callRes.status})` };
+      }
+
+      const { event_id } = await callRes.json();
+      if (!event_id) return { transcript: null, error: "Gradio returned no event_id" };
+
+      // 3. Read SSE stream and grab the final completed data payload
+      const resultRes = await fetch(`${baseUrl}/gradio_api/call/${endpoint}/${event_id}`, {
         signal: controller.signal
       });
       const sseText = await resultRes.text();
-     const dataLines = sseText
-     .split("\n")
-     .filter((l) => l.startsWith("data: ") && l !== "data: null");
-   const lastDataLine = dataLines[dataLines.length - 1];
-   if (!lastDataLine) return null;
 
-   const parsed = JSON.parse(lastDataLine.slice(6));
-   const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
-   return transcript || null;
-      return transcript || null;
-    } catch {
-      return null;
+      if (sseText.includes("event: error")) {
+        return { transcript: null, error: "Colab model threw an error processing audio (check Colab logs)" };
+      }
+
+      const dataLines = sseText
+        .split("\n")
+        .filter((l) => l.startsWith("data: ") && l !== "data: null");
+      const lastDataLine = dataLines[dataLines.length - 1];
+      if (!lastDataLine) return { transcript: null, error: "Gradio returned empty transcription" };
+
+      const parsed = JSON.parse(lastDataLine.slice(6));
+      const transcript = Array.isArray(parsed) ? String(parsed[0] || "").trim() : "";
+      return { transcript: transcript || null, error: transcript ? null : "Model heard silence or unrecognized audio" };
+    } catch (err) {
+      return {
+        transcript: null,
+        error: err.name === "AbortError"
+          ? "Colab timed out (25s) — server may be asleep"
+          : `Could not reach Colab (${err.message})`
+      };
     } finally {
       clearTimeout(timer);
     }
   }
-
   // --- Local Offline MFCC + DTW Acoustic Fingerprinting ---
   async function decodeAndTrim(blob) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -239,21 +267,25 @@
       });
   }
 
-  async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
+ async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
     // 1. Try cloud OmniASR speech recognition first if configured & online
-    const transcript = await transcribeViaMMS(patientBlob);
-    if (transcript && window.ClinicalSearch) {
-      const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, transcript);
+    const asr = await transcribeViaMMS(patientBlob);
+    if (asr.transcript && window.ClinicalSearch) {
+      const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, asr.transcript);
       const matches = ranked.slice(0, 3).map((r) => ({
         phrase: r.phrase,
         confidence: Math.min(95, Math.max(45, r.score)),
         hasAudio: Boolean(audioMap[r.phrase.id]?.url),
-        transcript,
+        transcript: asr.transcript,
         engine: "omniasr"
       }));
-      return { transcript, engine: "omniasr", matches };
+      return { transcript: asr.transcript, asrError: null, engine: "omniasr", matches };
     }
 
+    // 2. Fallback to offline MFCC + DTW acoustic matching
+    const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
+    return { transcript: null, asrError: asr.error, engine: "offline-dtw", matches: dtwMatches };
+  }
     // 2. Fallback to offline MFCC + DTW acoustic matching
     const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
     return { transcript: null, engine: "offline-dtw", matches: dtwMatches };
