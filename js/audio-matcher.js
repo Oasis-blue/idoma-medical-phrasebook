@@ -38,7 +38,7 @@
     if (!baseUrl || !navigator.onLine) return null;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 25000);
 
     try {
       // 1. Upload audio blob to Gradio server
