@@ -74,7 +74,8 @@
       status: p.status || p.verification_status || ((p.idoma || p.alala) ? "unconfirmed" : "missing"),
       variation_of_id: p.variation_of_id || null,
       variation_label: p.variation_label || "",
-      sort_order: p.sort_order ?? 0
+      sort_order: p.sort_order ?? 0,
+      entry_kind: p.entry_kind || "clinical"
     };
   }
 
@@ -124,14 +125,24 @@
 
   async function fetchPhrases(seedList) {
     if (isLiveDb && supabaseClient) {
-      const { data, error } = await supabaseClient
-        .from("phrases")
-        .select("*")
-        .eq("is_published", true)
-        .order("sort_order", { ascending: true });
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return { phrases: data.map(normalizePhrase), source: "supabase" };
+      // Page through the table: the API returns at most 1000 rows per request.
+      const all = [];
+      let failed = false;
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabaseClient
+          .from("phrases")
+          .select("*")
+          .eq("is_published", true)
+          .order("sort_order", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, from + 999);
+        if (error) { failed = true; break; }
+        if (!Array.isArray(data) || data.length === 0) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      if (!failed && all.length > 0) {
+        return { phrases: all.map(normalizePhrase), source: "supabase" };
       }
     }
     const { localPhrases } = ensureLocalStore(seedList);
@@ -548,6 +559,18 @@
     return norm;
   }
 
+  async function adminImportGlossary(session, entries, source) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Glossary import needs the live database (not demo mode).");
+    const { data, error } = await supabaseClient.rpc("admin_import_glossary", {
+      p_admin_code: session.access_code,
+      p_entries: entries,
+      p_source: source || "Common terms glossary"
+    });
+    if (error) throw new Error(error.message);
+    return data || {};
+  }
+
   async function adminImportSeedBatch(session, seedList, onProgress) {
     if (!session || !session.is_admin) throw new Error("Admin access required.");
     let done = 0;
@@ -579,6 +602,7 @@
     adminReviewSubmission,
     adminReviewAudioClip,
     adminUpsertPhrase,
-    adminImportSeedBatch
+    adminImportSeedBatch,
+    adminImportGlossary
   };
 })();
