@@ -50,12 +50,16 @@
       .trim();
   }
 
-  // Lightweight Levenshtein distance for typo tolerance (e.g., ikpei -> ikpeyi)
-  function editDistance(a, b) {
+  function compactText(str) {
+    return normalizeText(str).replace(/[\s'-]+/g, "");
+  }
+
+  // Levenshtein distance supporting up to maxDist edits (e.g., wangabo -> unwangabo)
+  function editDistance(a, b, maxDist = 2) {
     if (a === b) return 0;
     if (!a.length) return b.length;
     if (!b.length) return a.length;
-    if (Math.abs(a.length - b.length) > 2) return 3;
+    if (Math.abs(a.length - b.length) > maxDist) return maxDist + 1;
 
     const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
     for (let i = 1; i <= a.length; i++) {
@@ -121,6 +125,24 @@
     if (englishNorm.includes(cleanQuery) || idomaNorm.includes(cleanQuery) || alalaNorm.includes(cleanQuery)) {
       return { matched: true, score: 100, matchedVia: null };
     }
+
+    // 1b. Space-collapsed match for split/joined Idoma words (e.g., "uwangabo" / "wangabo" -> "Unwanga bo")
+    const compactQuery = compactText(cleanQuery);
+    const compactIdoma = compactText(phrase.idoma);
+    const compactAlala = compactText(phrase.alala);
+    if (compactQuery.length >= 4) {
+      if ((compactIdoma && compactIdoma.includes(compactQuery)) || (compactAlala && compactAlala.includes(compactQuery))) {
+        return { matched: true, score: 92, matchedVia: phrase.idoma || phrase.alala };
+      }
+      const allowedEdits = compactQuery.length >= 6 ? 2 : 1;
+      if (compactIdoma && editDistance(compactQuery, compactIdoma, allowedEdits) <= allowedEdits) {
+        return { matched: true, score: 86, matchedVia: phrase.idoma };
+      }
+      if (compactAlala && editDistance(compactQuery, compactAlala, allowedEdits) <= allowedEdits) {
+        return { matched: true, score: 86, matchedVia: phrase.alala };
+      }
+    }
+
     if (metaNorm.includes(cleanQuery)) {
       return { matched: true, score: 75, matchedVia: null };
     }
@@ -143,12 +165,13 @@
       }
     }
 
-    // 4. Fuzzy typo match on words >= 4 chars (e.g., "ikpei" -> "ikpeyi")
+    // 4. Fuzzy typo / prefix-drop match on individual words >= 4 chars
     const hayWords = fullHay.split(" ").filter((w) => w.length >= 4);
     for (const qw of direct) {
       if (qw.length < 4) continue;
+      const maxEdits = qw.length >= 6 ? 2 : 1;
       for (const hw of hayWords) {
-        if (editDistance(qw, hw) <= 1) {
+        if (editDistance(qw, hw, maxEdits) <= maxEdits) {
           return { matched: true, score: 45, matchedVia: hw };
         }
       }
