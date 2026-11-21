@@ -7,5 +7,5 @@ window.APP_CONFIG = {
   AUDIO_BUCKET: "idoma-audio",
   IDOMA_ASR_URL: "https://2a9557430fe6eca610.gradio.live/",
   DYNAMIC_ASR_URL: "",
-  AI_MATCHER_URL: ""
+  AI_MATCHER_URL: "https://idoma-matcher-api.onrender.com/"
 };
