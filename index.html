@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Idoma Medical Clinical Phrasebook | Bedside Communication Companion</title>
   <meta name="description" content="Clinical English-to-Idoma & dialect medical phrasebook with tone warnings, syllable breakdowns, approved audio pronunciation, and bedside communication tools." />
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="manifest" href="./manifest.json" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Crect x='13.75' y='6.5' width='4.5' height='19' rx='1.5' fill='white'/%3E%3Crect x='6.5' y='13.75' width='19' height='4.5' rx='1.5' fill='white'/%3E%3Cpath d='M23.5 9.2A9.5 9.5 0 0 1 26.2 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M8.5 22.8A9.5 9.5 0 0 1 5.8 16' fill='none' stroke='%2399f6e4' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./css/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -380,12 +382,11 @@
     <section id="aboutTab" class="tab-panel" hidden>
       <div class="about-stack">
         <div class="panel">
-          <h3>Why Tone &amp; Dialects Matter in Clinical Idoma</h3>
+          <h3>Why Tone & Dialects Matter in Clinical Idoma</h3>
           <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters, and spans regional dialects including <strong>Otukpo (Central)</strong>, <strong>Alala (Orokam)</strong>, <strong>Agatu</strong>, <strong>Otukpa</strong>, and <strong>Apa</strong>. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
-          <div class="two-col" style="margin-top:12px;">
-            <div class="tone-alert" style="margin-top:0;"><strong>Ebi</strong> — Blood vs. Feces vs. To be dark (pitch-dependent)</div>
+          <div id="guideToneExamples" class="two-col" style="margin-top:12px;"></div>
+           <div class="two-col" style="margin-top:12px;">
             <div class="tone-alert" style="margin-top:0;"><strong>Ipu</strong> — Abdomen / Stomach vs. Inside / Within</div>
-            <div class="tone-alert" style="margin-top:0;"><strong>Akpà</strong> — Skin vs. Bag / Pocket</div>
           </div>
         </div>
 
@@ -427,5 +428,12 @@
   <script src="./js/audio-matcher.js"></script>
  <script src="./js/clinical-search.js"></script>
   <script src="./js/app.js"></script>
+<script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
