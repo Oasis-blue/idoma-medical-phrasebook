@@ -1,4 +1,4 @@
-const CACHE_NAME = "idoma-med-shell-v13.0";
+const CACHE_NAME = "idoma-med-shell-v14.0";
 const AUDIO_CACHE = "idoma-med-audio-v1";
 
 const CORE_ASSETS = [
@@ -18,7 +18,11 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
   );
-  self.skipWaiting();
+  // No skipWaiting here: the page shows an "Update available" bar and sends SKIP_WAITING when tapped.
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
