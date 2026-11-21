@@ -1238,15 +1238,17 @@
           const transcript = Array.isArray(result) ? null : result.transcript;
           const asrError = Array.isArray(result) ? null : result.asrError;
 
+          const statusNoteHtml = asrError
+            ? `<div class="clinical-note" style="margin-top:0; margin-bottom:10px;">
+                 <strong>Cloud ASR Note:</strong> ${escapeHtml(asrError)} (using offline fallback)
+               </div>`
+            : "";
+
           const transcriptBoxHtml = transcript
             ? `<div class="tone-alert" style="margin-top:0; margin-bottom:10px; background:var(--surface-alt); color:var(--text); border-color:var(--accent);">
                  <strong>AI Heard (Idoma Transcription):</strong> "${escapeHtml(transcript)}"
                </div>`
-            : (asrError
-                ? `<div class="clinical-note" style="margin-top:0; margin-bottom:10px;">
-                     <strong>Cloud ASR Status:</strong> ${escapeHtml(asrError)}
-                   </div>`
-                : "");
+            : statusNoteHtml;
 
           if (matches.length === 0) {
             const hasAnyAudio = Object.keys(audioMap).length > 0;
@@ -1278,7 +1280,7 @@
               <div class="match-card">
                 <div>
                   <strong>${escapeHtml(m.phrase.english)}</strong> — <span class="idoma-term">${escapeHtml(m.phrase.idoma || m.phrase.alala)}</span>
-                  <div class="muted small-note">Match score: ${m.confidence}% · Confirm directly with patient</div>
+                  <div class="muted small-note">Match score: ${m.confidence}% · Engine: <code>${escapeHtml(m.engine || "match")}</code> · Confirm directly with patient</div>
                 </div>
                 ${m.hasAudio ? `<button type="button" class="btn btn-sm btn-primary" data-match-play="${escapeHtml(audioMap[m.phrase.id].url)}">Hear Reference</button>` : ""}
               </div>
