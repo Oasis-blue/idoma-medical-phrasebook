@@ -32,16 +32,16 @@
     });
   }
 
-  // --- Cloud Meta MMS (idu) Transcription via Gradio API ---
+  // --- Cloud OmniASR / MMS Transcription via Gradio API ---
   async function transcribeViaMMS(patientBlob) {
     const baseUrl = (window.APP_CONFIG?.IDOMA_ASR_URL || "").replace(/\/+$/, "");
     if (!baseUrl || !navigator.onLine) return null;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
+    const timer = setTimeout(() => controller.abort(), 12000);
 
     try {
-      // 1. Upload audio blob to Gradio Space
+      // 1. Upload audio blob to Gradio server
       const form = new FormData();
       form.append("files", patientBlob, "patient.webm");
 
@@ -55,11 +55,13 @@
       const serverPath = Array.isArray(uploadedPaths) ? uploadedPaths[0] : null;
       if (!serverPath) return null;
 
-      // 2. Trigger prediction
+      // 2. Trigger prediction with Gradio 5+ FileData payload
       const callRes = await fetch(`${baseUrl}/gradio_api/call/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: [{ path: serverPath }] }),
+        body: JSON.stringify({
+          data: [{ path: serverPath, meta: { _type: "gradio.FileData" } }]
+        }),
         signal: controller.signal
       });
       if (!callRes.ok) return null;
@@ -234,23 +236,23 @@
   }
 
   async function matchPatientSpeech(patientBlob, candidatePhrases, audioMap) {
-    // 1. Try cloud Meta MMS (idu) speech recognition first if configured & online
+    // 1. Try cloud OmniASR speech recognition first if configured & online
     const transcript = await transcribeViaMMS(patientBlob);
     if (transcript && window.ClinicalSearch) {
       const ranked = window.ClinicalSearch.searchAndRank(candidatePhrases, transcript);
-      if (ranked.length > 0) {
-        return ranked.slice(0, 3).map((r) => ({
-          phrase: r.phrase,
-          confidence: Math.min(95, Math.max(45, r.score)),
-          hasAudio: Boolean(audioMap[r.phrase.id]?.url),
-          transcript,
-          engine: "mms-idu"
-        }));
-      }
+      const matches = ranked.slice(0, 3).map((r) => ({
+        phrase: r.phrase,
+        confidence: Math.min(95, Math.max(45, r.score)),
+        hasAudio: Boolean(audioMap[r.phrase.id]?.url),
+        transcript,
+        engine: "omniasr"
+      }));
+      return { transcript, engine: "omniasr", matches };
     }
 
     // 2. Fallback to offline MFCC + DTW acoustic matching
-    return matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
+    const dtwMatches = await matchViaLocalDTW(patientBlob, candidatePhrases, audioMap);
+    return { transcript: null, engine: "offline-dtw", matches: dtwMatches };
   }
 
   window.AudioMatcher = {
