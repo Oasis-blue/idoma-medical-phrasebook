@@ -261,11 +261,9 @@
           clinical_note: payload.clinical_note || null,
           requester_label: payload.requester_label || "Public user",
           review_status: "pending"
-        }])
-        .select()
-        .single();
+        }]);
       if (error) throw new Error(error.message);
-      return data;
+      return data || { ok: true };
     }
 
     const subs = readLocal(LOCAL_KEYS.submissions, []);
