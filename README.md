@@ -24,3 +24,5 @@ Idoma is a tonal language where pitch patterns can change meaning, and written s
 
 ## Future AI Integration Path
 Because phrases, syllables, tone notes, and approved audio clips are stored in structured PostgreSQL tables (`phrases`, `audio_clips`), future AI features (such as clinical symptom clustering, study question generation, or reference audio matching) can query verified records directly rather than relying on unverified free-text guesswork.
+
+Acoustic Speech Recognition (Fine-Tuned Whisper / Wav2Vec2): Every approved audio clip your contributors record in idoma-audio—paired with its verified text and dialect tag—is a labeled speech dataset. Once you accumulate 200–500+ verified clips across Otukpo, Alala, Agatu, and Otukpa speakers, you can fine-tune a small speech model (like whisper-small or Meta's MMS — Massively Multilingual Speech, which already covers 1,100+ languages) to recognize patient responses far more accurately than raw DTW spectral matching.
