@@ -579,6 +579,33 @@ function renderGuideToneExamples() {
   }
 
   async function renderAdminDashboard() {
+
+    async function exportSpeechDataset(phrasesList, approvedAudioMap) {
+  const dataset = [];
+  for (const p of phrasesList) {
+    const clip = approvedAudioMap[p.id];
+    if (!clip || !clip.url) continue;
+    const transcript = (p.idoma || p.alala || "").trim();
+    if (!transcript) continue;
+
+    dataset.push({
+      phrase_id: p.id,
+      audio_url: clip.url,
+      transcription: transcript,
+      english_meaning: p.english,
+      dialect: p.variationLabel || (p.alala && !p.idoma ? "Alala (Orokam)" : "Idoma (General)"),
+      section: p.section,
+      verified: p.status === "verified"
+    });
+  }
+
+  const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `idoma-clinical-speech-dataset-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  return dataset.length;
+}
     const container = $("adminContent");
     if (!container) return;
     if (!session || !session.is_admin) {
