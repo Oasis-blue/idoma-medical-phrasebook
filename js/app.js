@@ -14,6 +14,10 @@
   let activeSection = "ALL";
   let activeStatus = "ALL";
 
+  // The Common Terms Glossary lives in the same table but stays off the home list.
+  const isGlossary = (p) => p && p.entry_kind === "glossary";
+  const clinicalPhrases = () => phrases.filter((p) => !isGlossary(p));
+
   let practiceSection = "ALL";
   let practiceDirection = "en_to_id";
   let practiceIndex = 0;
@@ -268,9 +272,9 @@
   function renderSectionPills() {
     const wrap = $("sectionPills");
     if (!wrap) return;
-    const sections = ["ALL", ...Array.from(new Set(phrases.map((p) => p.section).filter(Boolean)))];
+    const sections = ["ALL", ...Array.from(new Set(clinicalPhrases().map((p) => p.section).filter(Boolean)))];
     wrap.innerHTML = sections.map((sec) => {
-      const label = sec === "ALL" ? `All (${phrases.length})` : sec;
+      const label = sec === "ALL" ? `All (${clinicalPhrases().length})` : sec;
       const isActive = activeSection === sec;
       return `<button type="button" class="sec-pill ${isActive ? "active" : ""}" data-sec-pill="${escapeHtml(sec)}">${escapeHtml(label)}</button>`;
     }).join("");
@@ -286,7 +290,7 @@
 
   function getFilteredPhrases() {
     const q = ($("searchInput")?.value || "").trim();
-    const basePool = phrases.filter((p) => {
+    const basePool = clinicalPhrases().filter((p) => {
       if (activeSection !== "ALL" && p.section !== activeSection) return false;
       if (activeStatus !== "ALL" && p.status !== activeStatus) return false;
       if (dialectOnly && !p.alala && !p.variationLabel) return false;
@@ -298,10 +302,21 @@
     }
 
     if (window.ClinicalSearch) {
-      return window.ClinicalSearch.searchAndRank(basePool, q).map((item) => ({
+      const main = window.ClinicalSearch.searchAndRank(basePool, q).map((item) => ({
         ...item.phrase,
         _matchedVia: item.matchedVia
       }));
+      // Glossary entries only surface when searching, never on the default list
+      let gloss = [];
+      if (activeSection === "ALL" && !dialectOnly) {
+        const gPool = phrases.filter((p) => isGlossary(p) && (activeStatus === "ALL" || p.status === activeStatus));
+        gloss = window.ClinicalSearch.searchAndRank(gPool, q).slice(0, 30).map((item) => ({
+          ...item.phrase,
+          _matchedVia: item.matchedVia,
+          _glossary: true
+        }));
+      }
+      return main.concat(gloss);
     }
 
     const low = q.toLowerCase();
@@ -338,6 +353,7 @@
             ${statusBadgeHtml(p.status)}
           </div>
           ${p._matchedVia ? `<div class="muted small-note" style="margin-bottom:4px;">Matched via synonym/spelling: <strong>${escapeHtml(p._matchedVia)}</strong></div>` : ""}
+          ${p.variation_of_id && isGlossary(p) ? (() => { const base = phrases.find((x) => String(x.id) === String(p.variation_of_id)); return base ? `<div class="muted small-note" style="margin-bottom:4px;">Variant of: <strong>${escapeHtml(base.english)}</strong>${base.idoma ? " (" + escapeHtml(base.idoma) + ")" : ""}</div>` : ""; })() : ""}
           <h3 class="english-term">${escapeHtml(p.english)}</h3>
           <div class="idoma-row">
             <span class="idoma-term">${p.idoma ? escapeHtml(p.idoma) : "<em>No general Idoma entry yet</em>"}</span>
@@ -432,8 +448,11 @@
 
     const q = ($("searchInput")?.value || "").trim();
     const filtered = getFilteredPhrases();
+    const clinicalHits = filtered.filter((p) => !p._glossary);
+    const glossHits = filtered.filter((p) => p._glossary);
     if (countEl) {
-      countEl.textContent = `Showing ${filtered.length} of ${phrases.length} clinical entries`;
+      countEl.textContent = `Showing ${clinicalHits.length} of ${clinicalPhrases().length} clinical entries`
+        + (glossHits.length ? ` + ${glossHits.length} from the Common Terms Glossary` : "");
     }
 
     if (filtered.length === 0) {
@@ -473,7 +492,12 @@
     }
 
     if (fallbackEl) fallbackEl.hidden = true;
-    listEl.innerHTML = filtered.map(createCardHtml).join("");
+    listEl.innerHTML = clinicalHits.map(createCardHtml).join("")
+      + (glossHits.length
+        ? `<div class="muted small-note" style="grid-column:1/-1; margin:14px 0 4px; padding-top:10px; border-top:1px solid var(--border, #dce5e1);">
+             <strong>From the Common Terms Glossary</strong> · everyday vocabulary, spelling is a guide only. Verify aloud with a native speaker.
+           </div>` + glossHits.map(createCardHtml).join("")
+        : "");
     bindCardInteractions(listEl);
   }
 
@@ -502,7 +526,7 @@
     const cardEl = $("practiceCard");
     if (!cardEl) return;
 
-    const translated = phrases.filter((p) => (p.idoma || p.alala) && p.status !== "missing");
+    const translated = clinicalPhrases().filter((p) => (p.idoma || p.alala) && p.status !== "missing");
     const sections = Array.from(new Set(translated.map((p) => p.section).filter(Boolean)));
     const pool = practiceSection === "ALL"
       ? translated
@@ -627,9 +651,10 @@
   function populateAudioPhraseSelect() {
     const sel = $("audioPhraseSelect");
     if (!sel) return;
-    sel.innerHTML = phrases
-      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Variant)" : " [Blank]")}</option>`)
-      .join("");
+    const optionHtml = (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Variant)" : " [Blank]")}</option>`;
+    const glossary = phrases.filter(isGlossary);
+    sel.innerHTML = clinicalPhrases().map(optionHtml).join("")
+      + (glossary.length ? `<optgroup label="Common Terms Glossary">${glossary.map(optionHtml).join("")}</optgroup>` : "");
   }
 
   async function renderAdminDashboard() {
@@ -643,7 +668,7 @@
     container.innerHTML = "<p class='muted'>Loading moderation queues...</p>";
     try {
       const data = await DB.adminGetData(session);
-      const liveDbCount = DB.isLive() ? phrases.length : 0;
+      const liveDbCount = DB.isLive() ? clinicalPhrases().length : 0;
       const isSynced = DB.isLive() && liveDbCount >= seedPhrases.length && seedPhrases.length > 0;
       const pendingAll = data.submissions.filter((s) => s.review_status === "pending");
       const pendingVols = pendingAll.filter((s) => s.section === "Volunteer Application" || s.submission_type === "volunteer_request");
@@ -685,6 +710,20 @@
               <input type="url" id="liveAsrUrlInput" value="${escapeHtml(currentAsrUrl)}" placeholder="https://xxxx.gradio.live" />
             </label>
             <button type="button" class="btn btn-secondary" id="saveLiveAsrUrlBtn">Save ASR URL</button>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <strong>Common Terms Glossary</strong>
+            <p class="muted small-note" style="margin:6px 0 8px;">
+              Import a lexicon .json file. Entries stay off the home list and only appear in search results.
+              Terms identical to an existing one are skipped; different spellings of an existing term are added as variants.
+              Safe to re-run.
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input type="file" id="glossaryFileInput" accept="application/json,.json" />
+              <button type="button" class="btn btn-secondary" id="importGlossaryBtn">Import Glossary JSON</button>
+            </div>
+            <p id="glossaryImportStatus" class="small-note muted" style="margin:8px 0 0;"></p>
           </div>
         </div>
 
@@ -834,6 +873,43 @@
           setStatusBanner(`Successfully imported ${count} entries into the database.`, "success");
         } catch (err) {
           setStatusBanner("Import error: " + err.message, "warn");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+
+      $("importGlossaryBtn")?.addEventListener("click", async () => {
+        const file = $("glossaryFileInput")?.files?.[0];
+        const statusEl = $("glossaryImportStatus");
+        const btn = $("importGlossaryBtn");
+        if (!file) {
+          setStatusBanner("Choose a glossary .json file first.", "warn");
+          return;
+        }
+        if (btn) btn.disabled = true;
+        try {
+          const parsed = JSON.parse(await file.text());
+          const entries = Array.isArray(parsed) ? parsed : parsed.entries;
+          if (!Array.isArray(entries) || entries.length === 0) throw new Error("No entries array found in that file.");
+          const source = (parsed.meta && (parsed.meta.source || parsed.meta.title)) || file.name;
+          const totals = { processed: 0, inserted: 0, variations: 0, skipped_identical: 0, skipped_invalid: 0, updated: 0 };
+          for (let i = 0; i < entries.length; i += 100) {
+            const res = await DB.adminImportGlossary(session, entries.slice(i, i + 100), source);
+            Object.keys(totals).forEach((k) => { totals[k] += Number(res[k] || 0); });
+            if (statusEl) statusEl.textContent = `Importing... ${Math.min(i + 100, entries.length)} of ${entries.length}`;
+          }
+          const refreshed = await DB.fetchPhrases(seedPhrases);
+          phrases = refreshed.phrases;
+          renderSectionPills();
+          populateAudioPhraseSelect();
+          renderPhrases();
+          renderPracticeCard();
+          const summary = `Done: ${totals.inserted} new, ${totals.variations} variants of existing terms, ${totals.skipped_identical} identical (skipped), ${totals.updated} refreshed, ${totals.skipped_invalid} invalid.`;
+          if (statusEl) statusEl.textContent = summary;
+          setStatusBanner(summary, "success");
+        } catch (err) {
+          if (statusEl) statusEl.textContent = "";
+          setStatusBanner("Glossary import error: " + err.message, "warn");
         } finally {
           if (btn) btn.disabled = false;
         }
