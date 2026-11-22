@@ -134,6 +134,7 @@
           .select("*")
           .eq("is_published", true)
           .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true })
           .order("id", { ascending: true })
           .range(from, from + 999);
         if (error) { failed = true; break; }
@@ -142,7 +143,7 @@
         if (data.length < 1000) break;
       }
       if (!failed && all.length > 0) {
-        return { phrases: all.map(normalizePhrase), source: "supabase" };
+        return { phrases: sortPhrasesForDisplay(all.map(normalizePhrase)), source: "supabase" };
       }
     }
     const { localPhrases } = ensureLocalStore(seedList);
@@ -321,7 +322,13 @@
 
     if (isLiveDb && supabaseClient) {
       const bucket = (window.APP_CONFIG && window.APP_CONFIG.AUDIO_BUCKET) || "idoma-audio";
-      const ext = (mimeType || "").includes("mp4") ? "mp4" : "webm";
+      const mt = String(mimeType || "").toLowerCase();
+      const ext = mt.includes("mp4") || mt.includes("m4a") ? "m4a"
+        : mt.includes("mpeg") || mt.includes("mp3") ? "mp3"
+        : mt.includes("wav") ? "wav"
+        : mt.includes("ogg") ? "ogg"
+        : mt.includes("aac") ? "aac"
+        : "webm";
       const filePath = `${phraseId}/${session.id || "contrib"}-${Date.now()}.${ext}`;
 
       const { error: upErr } = await supabaseClient.storage
@@ -559,6 +566,68 @@
     return norm;
   }
 
+  // Roman-numeral section order (I, II, III ... XIV), clinical first, glossary last
+  function romanToInt(str) {
+    const map = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+    const u = String(str || "").toUpperCase();
+    let total = 0;
+    for (let i = 0; i < u.length; i++) {
+      const v = map[u[i]] || 0;
+      const n = map[u[i + 1]] || 0;
+      total += v < n ? -v : v;
+    }
+    return total;
+  }
+
+  function sectionRank(name) {
+    const m = /^\s*([IVXLC]+)\s*[.)]/i.exec(String(name || ""));
+    return m ? romanToInt(m[1]) : 1000;
+  }
+
+  function sortPhrasesForDisplay(list) {
+    return list
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => {
+        const ga = a.p.entry_kind === "glossary" ? 1 : 0;
+        const gb = b.p.entry_kind === "glossary" ? 1 : 0;
+        if (ga !== gb) return ga - gb;
+        const ra = sectionRank(a.p.section);
+        const rb = sectionRank(b.p.section);
+        if (ra !== rb) return ra - rb;
+        const sa = a.p.sort_order ?? 0;
+        const sb = b.p.sort_order ?? 0;
+        if (sa !== sb) return sa - sb;
+        return a.i - b.i;
+      })
+      .map((x) => x.p);
+  }
+
+  async function submitFeedback({ kind, message, contact }) {
+    if (!(isLiveDb && supabaseClient)) throw new Error("Feedback needs a connection to the live app.");
+    const { error } = await supabaseClient.from("feedback").insert([{
+      kind,
+      message: String(message || "").slice(0, 1000),
+      contact: contact ? String(contact).slice(0, 120) : null
+    }]);
+    if (error) throw new Error(error.message);
+  }
+
+  async function adminListFeedback(session) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Feedback inbox needs the live database.");
+    const { data, error } = await supabaseClient.rpc("admin_list_feedback", { p_admin_code: session.access_code });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function adminSetFeedbackStatus(session, id, status) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    const { error } = await supabaseClient.rpc("admin_update_feedback", {
+      p_admin_code: session.access_code, p_id: id, p_status: status
+    });
+    if (error) throw new Error(error.message);
+  }
+
   async function adminImportGlossary(session, entries, source) {
     if (!session || !session.is_admin) throw new Error("Admin access required.");
     if (!(isLiveDb && supabaseClient)) throw new Error("Glossary import needs the live database (not demo mode).");
@@ -603,6 +672,9 @@
     adminReviewAudioClip,
     adminUpsertPhrase,
     adminImportSeedBatch,
-    adminImportGlossary
+    adminImportGlossary,
+    submitFeedback,
+    adminListFeedback,
+    adminSetFeedbackStatus
   };
 })();
