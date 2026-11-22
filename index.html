@@ -12,6 +12,68 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <style id="splashStyles">
+    #disclaimerBar[hidden], #viewNoticeBtn[hidden] { display: none !important; }
+    #splash {
+      position: fixed; inset: 0; z-index: 10000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+      padding: 24px; text-align: center; color: #fff; cursor: pointer;
+      background: linear-gradient(160deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
+      transition: opacity .5s ease, visibility .5s ease;
+    }
+    #splash.is-hiding { opacity: 0; visibility: hidden; }
+    #splash .sp-emblem {
+      width: 92px; height: 92px; border-radius: 26px; margin-bottom: 10px;
+      background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.32);
+      display: flex; align-items: center; justify-content: center;
+      animation: spPop .7s ease both;
+    }
+    #splash .sp-title { margin: 0; font-size: clamp(30px, 9vw, 46px); font-weight: 700; animation: spRise .7s .15s ease both; }
+    #splash .sp-syl { margin: 4px 0 0; font-size: clamp(18px, 5vw, 24px); letter-spacing: .14em; color: #99f6e4; animation: spRise .7s .3s ease both; }
+    #splash .sp-pron { margin: 0; font-size: clamp(15px, 4.2vw, 19px); font-style: italic; opacity: .92; animation: spRise .7s .45s ease both; }
+    #splash .sp-meaning { margin: 14px 0 0; font-size: clamp(16px, 4.4vw, 20px); font-weight: 600; animation: spRise .7s .65s ease both; }
+    #splash .sp-gloss { margin: 0; font-size: 14px; opacity: .85; animation: spRise .7s .8s ease both; }
+    #splash .sp-hint { position: absolute; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 12px; opacity: .65; }
+    @keyframes spPop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+    @keyframes spRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { #splash, #splash * { animation: none !important; transition: none !important; } }
+  </style>
+
+  <!-- Splash: shown once per browser session / app launch, tap to skip -->
+  <div id="splash" role="img" aria-label="Ɛlā k'ín'ɛcí, communication in the hospital">
+    <div class="sp-emblem" aria-hidden="true">
+      <svg width="56" height="56" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="13.75" y="6.5" width="4.5" height="19" rx="1.5" fill="#fff" />
+        <rect x="6.5" y="13.75" width="19" height="4.5" rx="1.5" fill="#fff" />
+        <path d="M23.5 9.2A9.5 9.5 0 0 1 26.2 16" stroke="#99f6e4" stroke-width="2.2" stroke-linecap="round" />
+        <path d="M8.5 22.8A9.5 9.5 0 0 1 5.8 16" stroke="#99f6e4" stroke-width="2.2" stroke-linecap="round" />
+      </svg>
+    </div>
+    <h2 class="sp-title">Ɛlā k'ín'ɛcí</h2>
+    <p class="sp-syl">Ɛ · lā &nbsp; k'ín · ɛ · cí</p>
+    <p class="sp-pron">eh-lah &nbsp; keen-eh-chee</p>
+    <p class="sp-meaning">Communication in the hospital</p>
+    <p class="sp-gloss">ɛlā = talk &nbsp;·&nbsp; ín'ɛcí = hospital</p>
+    <span class="sp-hint">Tap to continue</span>
+  </div>
+  <script>
+    (function () {
+      var el = document.getElementById("splash");
+      if (!el) return;
+      try {
+        if (sessionStorage.getItem("splashSeen") === "1") { el.remove(); return; }
+        sessionStorage.setItem("splashSeen", "1");
+      } catch (e) {}
+      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var hide = function () {
+        if (!el || el.classList.contains("is-hiding")) return;
+        el.classList.add("is-hiding");
+        setTimeout(function () { if (el) el.remove(); }, 650);
+      };
+      el.addEventListener("click", hide);
+      setTimeout(hide, reduce ? 1200 : 2800);
+    })();
+  </script>
   <!-- Clinical Safety Disclaimer -->
   <div id="disclaimerBar" class="disclaimer-strip" role="region" aria-label="Clinical Disclaimer">
     <div class="container disclaimer-inner">
@@ -44,6 +106,9 @@
         </div>
       </div>
 
+      <button type="button" id="viewNoticeBtn" class="btn btn-sm btn-ghost" hidden
+        style="color:#fff; border-color:rgba(255,255,255,.45); white-space:nowrap;">Clinical notice</button>
+
       <!-- Hidden by default for regular users; reveals only when Contributor Sign In is clicked or active -->
       <div id="headerAuthBox" class="auth-box" hidden>
         <form id="loginForm" class="code-form" hidden>
@@ -64,6 +129,33 @@
       </div>
     </div>
   </header>
+
+  <script>
+    // Clinical notice: after "Acknowledge" it stays hidden for a few hours; "Clinical notice" in the header reopens it.
+    (function () {
+      var KEY = "disclaimerAckAt";
+      var HOURS = 4;
+      var bar = document.getElementById("disclaimerBar");
+      var btn = document.getElementById("viewNoticeBtn");
+      var ack = document.getElementById("dismissDisclaimerBtn");
+      if (!bar || !btn) return;
+      var recentlyAcked = function () {
+        try { var t = Number(localStorage.getItem(KEY)); return t > 0 && Date.now() - t < HOURS * 3600 * 1000; }
+        catch (e) { return false; }
+      };
+      var showBar = function () { bar.hidden = false; btn.hidden = true; };
+      var hideBar = function () { bar.hidden = true; btn.hidden = false; };
+      if (recentlyAcked()) hideBar(); else showBar();
+      if (ack) ack.addEventListener("click", function () {
+        try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+        hideBar();
+      });
+      btn.addEventListener("click", function () {
+        showBar();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    })();
+  </script>
 
   <main class="container main-wrap">
     <!-- Floating Toast Notification -->
