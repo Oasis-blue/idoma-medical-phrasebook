@@ -192,7 +192,7 @@ with check (
 -- Only the live ASR URL setting is readable by the public
 drop policy if exists "Public read asr setting" on public.app_settings;
 create policy "Public read asr setting"
-on public.app_settings for select using (key = 'idoma_asr_url');
+on public.app_settings for select using (key in ('idoma_asr_url', 'dialect_alala_label'));
 
 drop policy if exists "Public upload idoma audio" on storage.objects;
 create policy "Public upload idoma audio"
@@ -215,7 +215,7 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in (
-        'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
+        'admin_list_feedback', 'admin_update_feedback', 'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
         'register_audio_clip', 'admin_list_contributors', 'admin_upsert_contributor',
         'admin_delete_contributor', 'admin_list_submissions', 'admin_review_submission',
         'admin_list_audio_clips', 'admin_review_audio_clip', 'admin_upsert_phrase',
@@ -856,6 +856,53 @@ begin
     'processed', v_n, 'inserted', v_ins, 'variations', v_var,
     'skipped_identical', v_same, 'skipped_invalid', v_bad, 'updated', v_upd
   );
+end;
+$$;
+
+
+-- 12. Feedback inbox ------------------------------------------------------------------
+create table if not exists public.feedback (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('wrong_term', 'missing_term', 'bug', 'idea', 'other')),
+  message text not null check (char_length(message) between 5 and 1000),
+  contact text check (contact is null or char_length(contact) <= 120),
+  status text not null default 'new' check (status in ('new', 'read', 'done')),
+  created_at timestamptz not null default now()
+);
+
+alter table public.feedback enable row level security;
+
+drop policy if exists "Public send feedback" on public.feedback;
+create policy "Public send feedback"
+on public.feedback for insert
+with check (status = 'new');
+
+create or replace function public.admin_list_feedback(p_admin_code text)
+returns setof public.feedback
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  return query select * from public.feedback
+  order by (status = 'new') desc, created_at desc
+  limit 100;
+end;
+$$;
+
+create or replace function public.admin_update_feedback(p_admin_code text, p_id uuid, p_status text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  if p_status not in ('new', 'read', 'done') then raise exception 'Invalid status.'; end if;
+  update public.feedback set status = p_status where id = p_id;
 end;
 $$;
 
