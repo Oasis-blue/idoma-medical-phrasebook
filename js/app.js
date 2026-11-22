@@ -45,6 +45,44 @@
     });
   }
 
+  // Special acknowledgments: one per line in Admin Studio, shown in Guide & Credits
+  const DEFAULT_ACK = [
+    "CMDA (Christian Medical and Dental Association)",
+    "CMDA FUHSO",
+    "Dr. Eli",
+    "the Pioneers",
+    "the Mavericks",
+    "all native speakers and elders who verified terms"
+  ];
+  let specialAck = DEFAULT_ACK.slice();
+  const formatAckList = (items) => {
+    const l = items.filter(Boolean);
+    if (l.length <= 1) return l[0] || "";
+    if (l.length === 2) return `${l[0]} and ${l[1]}`;
+    return `${l.slice(0, -1).join(", ")}, and ${l[l.length - 1]}`;
+  };
+  function applySpecialAck() {
+    const el = $("specialAckText");
+    if (el) el.textContent = formatAckList(specialAck) + ".";
+  }
+  async function syncAckFromDb() {
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) return;
+    try {
+      const url = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/app_settings?key=eq.special_acknowledgments&select=value`;
+      const res = await fetch(url, {
+        headers: {
+          apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!res.ok) return;
+      const rows = await res.json();
+      const val = Array.isArray(rows) && rows[0]?.value ? String(rows[0].value) : "";
+      const lines = val.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 30);
+      specialAck = lines.length ? lines : DEFAULT_ACK.slice();
+    } catch (_) { /* keep default */ }
+  }
+
   async function syncDialectLabelFromDb() {
     if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) return;
     try {
@@ -902,6 +940,15 @@
           </div>
 
           <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <strong>Special acknowledgments</strong>
+            <p class="muted small-note" style="margin:6px 0 8px;">One name or group per line. Shown under Guide &amp; Credits. Leave blank to restore the default list.</p>
+            <textarea id="ackInput" rows="7" style="width:100%;">${escapeHtml(specialAck.join("\n"))}</textarea>
+            <div style="margin-top:8px;">
+              <button type="button" class="btn btn-secondary" id="saveAckBtn">Save acknowledgments</button>
+            </div>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
             <strong>Feedback inbox</strong>
             <div style="margin-top:8px;">
               <button type="button" class="btn btn-secondary" id="loadFeedbackBtn">Load latest feedback</button>
@@ -1146,6 +1193,18 @@
           setStatusBanner(`Dialect name saved: ${alalaLabel}`, "success");
         } catch (err) {
           setStatusBanner("Could not save dialect name: " + err.message, "warn");
+        }
+      });
+
+      $("saveAckBtn")?.addEventListener("click", async () => {
+        const text = ($("ackInput")?.value || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean).join("\n");
+        try {
+          await saveSettingToDb("special_acknowledgments", text);
+          specialAck = text ? text.split("\n") : DEFAULT_ACK.slice();
+          applySpecialAck();
+          setStatusBanner("Acknowledgments saved.", "success");
+        } catch (err) {
+          setStatusBanner("Could not save acknowledgments: " + err.message, "warn");
         }
       });
 
@@ -1856,6 +1915,8 @@
       await syncDynamicAsrUrlFromDb();
       await syncDialectLabelFromDb();
       applyDialectLabel();
+      await syncAckFromDb();
+      applySpecialAck();
       session = DB.getSavedSession();
       trayIds = DB.getTrayIds();
       updateTrayBadge();
