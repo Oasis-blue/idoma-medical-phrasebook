@@ -215,7 +215,7 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in (
-        'admin_list_feedback', 'admin_update_feedback', 'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
+        'admin_stats', 'admin_list_feedback', 'admin_update_feedback', 'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
         'register_audio_clip', 'admin_list_contributors', 'admin_upsert_contributor',
         'admin_delete_contributor', 'admin_list_submissions', 'admin_review_submission',
         'admin_list_audio_clips', 'admin_review_audio_clip', 'admin_upsert_phrase',
@@ -903,6 +903,104 @@ begin
   if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
   if p_status not in ('new', 'read', 'done') then raise exception 'Invalid status.'; end if;
   update public.feedback set status = p_status where id = p_id;
+end;
+$$;
+
+
+-- 13. Anonymous usage log + admin stats --------------------------------------------------
+-- Stores only: event name, a short detail (phrase code, tab name, or a search that found nothing),
+-- and random anonymous ids. No names, no patient information, no Listen transcripts.
+create table if not exists public.usage_events (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  event text not null check (event in (
+    'app_open', 'tab_view', 'search', 'search_no_results', 'audio_played',
+    'phrase_pinned', 'listen_used', 'feedback_sent'
+  )),
+  detail text check (detail is null or char_length(detail) <= 60),
+  session_id text check (session_id is null or char_length(session_id) <= 64),
+  device_id text check (device_id is null or char_length(device_id) <= 64)
+);
+
+create index if not exists idx_usage_events_created on public.usage_events (created_at desc);
+create index if not exists idx_usage_events_event on public.usage_events (event, created_at desc);
+
+alter table public.usage_events enable row level security;
+
+drop policy if exists "Public log usage" on public.usage_events;
+create policy "Public log usage"
+on public.usage_events for insert
+with check (true);
+
+create or replace function public.admin_stats(p_admin_code text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+  v jsonb;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+
+  select jsonb_build_object(
+    'clinical_total', (select count(*) from public.phrases where entry_kind = 'clinical' and is_published),
+    'glossary_total', (select count(*) from public.phrases where entry_kind = 'glossary' and is_published),
+    'clinical_by_status', coalesce((
+      select jsonb_object_agg(verification_status, c) from (
+        select verification_status, count(*) as c from public.phrases
+        where entry_kind = 'clinical' and is_published group by verification_status) s), '{}'::jsonb),
+    'clinical_with_audio', (
+      select count(distinct a.phrase_id) from public.audio_clips a
+      join public.phrases p on p.id = a.phrase_id
+      where a.approval_status = 'approved' and p.entry_kind = 'clinical'),
+    'glossary_with_audio', (
+      select count(distinct a.phrase_id) from public.audio_clips a
+      join public.phrases p on p.id = a.phrase_id
+      where a.approval_status = 'approved' and p.entry_kind = 'glossary'),
+    'audio_by_status', coalesce((
+      select jsonb_object_agg(approval_status, c) from (
+        select approval_status, count(*) as c from public.audio_clips group by approval_status) s), '{}'::jsonb),
+    'submissions_pending', (select count(*) from public.phrase_submissions where review_status = 'pending'),
+    'contributors_active', (select count(*) from public.contributors where is_active),
+    'feedback_new', (select count(*) from public.feedback where status = 'new'),
+    'usage', jsonb_build_object(
+      'devices_7d', (select count(distinct device_id) from public.usage_events where created_at > now() - interval '7 days'),
+      'devices_30d', (select count(distinct device_id) from public.usage_events where created_at > now() - interval '30 days'),
+      'sessions_7d', (select count(distinct session_id) from public.usage_events where created_at > now() - interval '7 days'),
+      'sessions_30d', (select count(distinct session_id) from public.usage_events where created_at > now() - interval '30 days'),
+      'opens_7d', (select count(*) from public.usage_events where event = 'app_open' and created_at > now() - interval '7 days')
+    ),
+    'events_7d', coalesce((
+      select jsonb_object_agg(event, c) from (
+        select event, count(*) as c from public.usage_events
+        where created_at > now() - interval '7 days' group by event) s), '{}'::jsonb),
+    'tabs_7d', coalesce((
+      select jsonb_object_agg(detail, c) from (
+        select detail, count(*) as c from public.usage_events
+        where event = 'tab_view' and detail is not null and created_at > now() - interval '7 days'
+        group by detail) s), '{}'::jsonb),
+    'top_missing', coalesce((
+      select jsonb_agg(jsonb_build_object('term', detail, 'count', c) order by c desc) from (
+        select detail, count(*) as c from public.usage_events
+        where event = 'search_no_results' and detail is not null and created_at > now() - interval '30 days'
+        group by detail order by c desc limit 15) s), '[]'::jsonb),
+    'top_played', coalesce((
+      select jsonb_agg(jsonb_build_object('english', coalesce(p.english_term, s.detail), 'count', s.c) order by s.c desc) from (
+        select detail, count(*) as c from public.usage_events
+        where event = 'audio_played' and detail is not null and created_at > now() - interval '30 days'
+        group by detail order by c desc limit 10) s
+      left join public.phrases p on p.phrase_code = s.detail), '[]'::jsonb),
+    'daily', coalesce((
+      select jsonb_agg(jsonb_build_object('day', g.d::date, 'sessions', coalesce(x.c, 0)) order by g.d)
+      from generate_series(current_date - 13, current_date, interval '1 day') as g(d)
+      left join (
+        select created_at::date as day, count(distinct session_id) as c
+        from public.usage_events where created_at >= current_date - 13 group by 1) x
+        on x.day = g.d::date), '[]'::jsonb)
+  ) into v;
+
+  return v;
 end;
 $$;
 
