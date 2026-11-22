@@ -1,4 +1,4 @@
-const CACHE_NAME = "idoma-med-shell-v18.0";
+const CACHE_NAME = "idoma-med-shell-v19.0";
 const AUDIO_CACHE = "idoma-med-audio-v1";
 
 const CORE_ASSETS = [
