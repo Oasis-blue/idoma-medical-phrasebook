@@ -357,6 +357,23 @@
           <p class="muted small-note">Authorized contributors can record clear voice clips for any entry and dialect. Recordings remain queued until approved by an Admin.</p>
 
           <label>
+            Find a term to record
+            <input type="search" id="audioPhraseFilter" placeholder="Type English or Idoma to narrow the list" autocomplete="off" />
+          </label>
+          <div class="btn-row" style="justify-content:flex-start; align-items:center; gap:12px; flex-wrap:wrap;">
+            <select id="audioKindFilter" aria-label="Which entries to list">
+              <option value="all">All entries</option>
+              <option value="clinical">Clinical phrases only</option>
+              <option value="glossary">Common Terms Glossary only</option>
+            </select>
+            <label style="flex-direction:row; align-items:center; gap:6px; font-weight:500;">
+              <input type="checkbox" id="audioNeedsOnly" style="width:auto;" />
+              <span>No audio yet</span>
+            </label>
+            <span id="audioFilterInfo" class="muted small-note"></span>
+          </div>
+
+          <label>
             Select Phrase to Record
             <select id="audioPhraseSelect"></select>
           </label>
@@ -386,6 +403,11 @@
             <span id="recordStateText" class="muted small-note">Ready</span>
           </div>
 
+          <label>
+            Or upload an existing recording (mp3, m4a, wav, webm or ogg; max 5 MB)
+            <input type="file" id="audioFileInput" accept="audio/*" />
+          </label>
+
           <audio id="audioPreview" controls hidden class="audio-player"></audio>
 
           <button type="button" id="saveAudioBtn" class="btn btn-primary" disabled>Submit Audio for Review</button>
@@ -398,7 +420,7 @@
       <div class="about-stack">
         <div class="panel">
           <h3>Why Tone & Dialects Matter in Clinical Idoma</h3>
-          <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters, and spans regional dialects including <strong>Otukpo (Central)</strong>, <strong>Alala (Orokam)</strong>, <strong>Agatu</strong>, <strong>Otukpa</strong>, and <strong>Apa</strong>. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
+          <p>Idoma uses relative pitch levels (High, Mid, Low) to distinguish words that share identical letters, and spans regional dialects including <strong>Otukpo (Central)</strong>, <strong data-alala-label>Alala (Orokam)</strong>, <strong>Agatu</strong>, <strong>Otukpa</strong>, and <strong>Apa</strong>. Always pair written prompts with approved audio recordings, clear gestures, and respectful greetings.</p>
           <!-- <div id="guideToneExamples" class="two-col" style="margin-top:12px;"></div> -->
            <div class="two-col" style="margin-top:12px;">
             <div class="tone-alert" style="margin-top:0;"><strong>Ipu</strong> — Abdomen / Stomach vs. Inside / Within</div>
@@ -415,6 +437,30 @@
           </div>
           <div id="creditsGrid" class="credits-grid" style="margin-top:12px;"></div>
         </div>
+
+        <div class="panel stack-form" id="feedbackPanel">
+          <h3>Send Feedback</h3>
+          <p class="muted small-note">Found a wrong or missing term, a bug, or have an idea? Tell us. Please do not include any patient information.</p>
+          <label>
+            What is this about?
+            <select id="fbKind">
+              <option value="wrong_term">A term looks wrong</option>
+              <option value="missing_term">A term is missing</option>
+              <option value="bug">Something is broken</option>
+              <option value="idea">An idea or suggestion</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            Your message
+            <textarea id="fbMessage" rows="4" maxlength="1000" placeholder="Describe what you saw or what you would like to see"></textarea>
+          </label>
+          <label>
+            How can we reach you? (optional)
+            <input type="text" id="fbContact" maxlength="120" placeholder="WhatsApp, phone or email" />
+          </label>
+          <button type="button" id="fbSendBtn" class="btn btn-primary">Send Feedback</button>
+        </div>
       </div>
     </section>
 
@@ -424,6 +470,11 @@
     </section>
   </main>
 
+  <div id="scrollNav" aria-label="Scroll shortcuts" style="position:fixed; right:max(12px, env(safe-area-inset-right, 0px)); bottom:calc(84px + env(safe-area-inset-bottom, 0px)); z-index:900; display:flex; flex-direction:column; gap:8px;">
+    <button type="button" id="scrollTopBtn" class="btn btn-secondary" aria-label="Scroll to top" style="display:none; width:42px; height:42px; padding:0; border-radius:50%; box-shadow:0 2px 8px rgba(0,0,0,.25); font-size:18px;">&uarr;</button>
+    <button type="button" id="scrollBottomBtn" class="btn btn-secondary" aria-label="Scroll to bottom" style="display:none; width:42px; height:42px; padding:0; border-radius:50%; box-shadow:0 2px 8px rgba(0,0,0,.25); font-size:18px;">&darr;</button>
+  </div>
+
   <!-- Subtle Discreet Footer with Contributor Sign-In Trigger -->
   <footer class="site-footer">
     <div class="container footer-inner">
@@ -432,6 +483,8 @@
         <button type="button" id="footerVolunteerBtn" class="btn-link">Volunteer</button>
         <span aria-hidden="true" class="muted">·</span>
         <button type="button" id="footerAboutBtn" class="btn-link">Guide &amp; Credits</button>
+        <span aria-hidden="true" class="muted">·</span>
+        <button type="button" id="footerFeedbackBtn" class="btn-link">Feedback</button>
         <span aria-hidden="true" class="muted">·</span>
         <button type="button" id="footerLoginTrigger" class="btn-link">Contributor Access</button>
       </div>
