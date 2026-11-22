@@ -612,6 +612,14 @@
     if (error) throw new Error(error.message);
   }
 
+  async function adminStats(session) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Stats need the live database.");
+    const { data, error } = await supabaseClient.rpc("admin_stats", { p_admin_code: session.access_code });
+    if (error) throw new Error(error.message);
+    return data || {};
+  }
+
   async function adminListFeedback(session) {
     if (!session || !session.is_admin) throw new Error("Admin access required.");
     if (!(isLiveDb && supabaseClient)) throw new Error("Feedback inbox needs the live database.");
@@ -675,6 +683,7 @@
     adminImportGlossary,
     submitFeedback,
     adminListFeedback,
+    adminStats,
     adminSetFeedbackStatus
   };
 })();
