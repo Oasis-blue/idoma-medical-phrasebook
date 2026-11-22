@@ -33,13 +33,15 @@
     #splash .sp-pron { margin: 0; font-size: clamp(15px, 4.2vw, 19px); font-style: italic; opacity: .92; animation: spRise .7s .45s ease both; }
     #splash .sp-meaning { margin: 14px 0 0; font-size: clamp(16px, 4.4vw, 20px); font-weight: 600; animation: spRise .7s .65s ease both; }
     #splash .sp-gloss { margin: 0; font-size: 14px; opacity: .85; animation: spRise .7s .8s ease both; }
-    #splash .sp-hint { position: absolute; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 12px; opacity: .65; }
+    #splash .sp-foot { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    #splash .sp-by { font-size: 13px; letter-spacing: .04em; opacity: .9; }
+    #splash .sp-hint { font-size: 12px; opacity: .6; }
     @keyframes spPop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
     @keyframes spRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { #splash, #splash * { animation: none !important; transition: none !important; } }
   </style>
 
-  <!-- Splash: shown once per browser session / app launch, tap to skip -->
+  <!-- Splash: shown on every page load for 4 seconds, tap to skip -->
   <div id="splash" role="img" aria-label="Ɛlā k'ín'ɛcí, communication in the hospital">
     <div class="sp-emblem" aria-hidden="true">
       <svg width="56" height="56" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -54,24 +56,22 @@
     <p class="sp-pron">eh-lah &nbsp; keen-eh-chee</p>
     <p class="sp-meaning">Communication in the hospital</p>
     <p class="sp-gloss">ɛlā = talk &nbsp;·&nbsp; ín'ɛcí = hospital</p>
-    <span class="sp-hint">Tap to continue</span>
+    <div class="sp-foot">
+      <span class="sp-by">by Mantra 🧘🏾</span>
+      <span class="sp-hint">Tap to continue</span>
+    </div>
   </div>
   <script>
     (function () {
       var el = document.getElementById("splash");
       if (!el) return;
-      try {
-        if (sessionStorage.getItem("splashSeen") === "1") { el.remove(); return; }
-        sessionStorage.setItem("splashSeen", "1");
-      } catch (e) {}
-      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       var hide = function () {
         if (!el || el.classList.contains("is-hiding")) return;
         el.classList.add("is-hiding");
         setTimeout(function () { if (el) el.remove(); }, 650);
       };
       el.addEventListener("click", hide);
-      setTimeout(hide, reduce ? 1200 : 2800);
+      setTimeout(hide, 4000); // how long the splash stays, in milliseconds
     })();
   </script>
   <!-- Clinical Safety Disclaimer -->
@@ -527,7 +527,19 @@
             </div>
             <button type="button" id="aboutVolunteerBtn" class="btn btn-sm btn-primary">Volunteer to Contribute</button>
           </div>
+          <div class="panel" style="margin-top:12px; background:rgba(15,118,110,.08); border-color:rgba(15,118,110,.3);">
+            <div class="small-note" style="letter-spacing:.1em; font-weight:700; color:#0f766e;">LEAD AUTHOR</div>
+            <div style="font-size:18px; font-weight:700; margin-top:2px;">Alex Sunday Okoh</div>
+            <div class="small-note muted">300-level Medical Student, Federal University of Health Sciences, Otukpo (FUHSO)</div>
+          </div>
+
           <div id="creditsGrid" class="credits-grid" style="margin-top:12px;"></div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <p style="margin:0;"><strong>Special Acknowledgments:</strong>
+              <span id="specialAckText">CMDA (Christian Medical and Dental Association), CMDA FUHSO, Dr. Eli, the Pioneers, the Mavericks, and all native speakers and elders who verified terms.</span>
+            </p>
+          </div>
         </div>
 
         <div class="panel stack-form" id="feedbackPanel">
