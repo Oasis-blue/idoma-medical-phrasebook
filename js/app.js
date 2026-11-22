@@ -15,6 +15,70 @@
   let activeStatus = "ALL";
 
   // The Common Terms Glossary lives in the same table but stays off the home list.
+  const ALALA_DEFAULT = "Alala (Orokam)";
+  let alalaLabel = ALALA_DEFAULT;
+  const alalaShort = () => (alalaLabel.replace(/\s*\(.*?\)\s*/g, " ").trim() || alalaLabel);
+  const normalizeForFilter = (s) => String(s || "").toLowerCase()
+    .replace(/ɔ/g, "o").replace(/ɛ/g, "e").replace(/ŋ/g, "ng").replace(/[’‘ʼ]/g, "'")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // The dialect name is admin-editable (stored as a setting); static text is refreshed here.
+  function applyDialectLabel() {
+    const full = alalaLabel;
+    const short = alalaShort();
+    document.querySelectorAll("option").forEach((o) => {
+      if (o.dataset.alalaOpt === undefined && o.textContent.trim() !== ALALA_DEFAULT) return;
+      o.dataset.alalaOpt = "1";
+      o.textContent = full;
+      if (o.value === ALALA_DEFAULT || o.dataset.alalaVal === "1") {
+        o.value = full;
+        o.dataset.alalaVal = "1";
+      }
+    });
+    document.querySelectorAll("[data-alala-label]").forEach((el) => { el.textContent = full; });
+    document.querySelectorAll("input[placeholder]").forEach((el) => {
+      if (el.dataset.phOrig === undefined) {
+        if (!/Alala/.test(el.placeholder)) return;
+        el.dataset.phOrig = el.placeholder;
+      }
+      el.placeholder = el.dataset.phOrig.replace(/Alala \(Orokam\)/g, full).replace(/Alala/g, short);
+    });
+  }
+
+  async function syncDialectLabelFromDb() {
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) return;
+    try {
+      const url = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/app_settings?key=eq.dialect_alala_label&select=value`;
+      const res = await fetch(url, {
+        headers: {
+          apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!res.ok) return;
+      const rows = await res.json();
+      const val = Array.isArray(rows) && rows[0]?.value ? String(rows[0].value).trim() : "";
+      alalaLabel = val || ALALA_DEFAULT;
+    } catch (_) { /* keep default */ }
+  }
+
+  async function saveSettingToDb(key, value) {
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) {
+      throw new Error("Supabase is not connected.");
+    }
+    if (!session || !session.is_admin || !session.access_code) throw new Error("Admin sign-in is required.");
+    const res = await fetch(`${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/rpc/admin_set_setting`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+      },
+      body: JSON.stringify({ p_admin_code: session.access_code, p_key: key, p_value: String(value || "").trim() })
+    });
+    if (!res.ok) throw new Error(`Failed saving setting (${res.status}): ${await res.text()}`);
+  }
+
   const isGlossary = (p) => p && p.entry_kind === "glossary";
   const clinicalPhrases = () => phrases.filter((p) => !isGlossary(p));
 
@@ -343,7 +407,7 @@
       ? `<button type="button" class="btn btn-sm btn-primary" data-play-url="${escapeHtml(clip.url)}">Play Audio</button>`
       : `<span class="muted small-note">No audio yet</span>`;
 
-    const variantTag = p.variationLabel || "Alala (Orokam)";
+    const variantTag = p.variationLabel || alalaLabel;
 
     return `
       <article class="phrase-card status-${escapeHtml(p.status)} ${bedsideMode ? "bedside-card" : ""}">
@@ -555,7 +619,7 @@
     const clip = audioMap[item.id];
     const isReverse = practiceDirection === "id_to_en";
 
-    const variantTag = item.variationLabel || "Alala (Orokam)";
+    const variantTag = item.variationLabel || alalaLabel;
     const primaryIdoma = item.idoma || `${item.alala} (${variantTag})`;
     const promptText = isReverse ? primaryIdoma : item.english;
     const answerText = isReverse ? item.english : primaryIdoma;
@@ -651,10 +715,25 @@
   function populateAudioPhraseSelect() {
     const sel = $("audioPhraseSelect");
     if (!sel) return;
-    const optionHtml = (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Variant)" : " [Blank]")}</option>`;
-    const glossary = phrases.filter(isGlossary);
-    sel.innerHTML = clinicalPhrases().map(optionHtml).join("")
+    const prev = sel.value;
+    const text = normalizeForFilter($("audioPhraseFilter")?.value || "");
+    const kind = $("audioKindFilter")?.value || "all";
+    const needsOnly = !!$("audioNeedsOnly")?.checked;
+    const keep = (p) => {
+      if (kind === "clinical" && isGlossary(p)) return false;
+      if (kind === "glossary" && !isGlossary(p)) return false;
+      if (needsOnly && audioMap[p.id]) return false;
+      if (text && !normalizeForFilter(`${p.english} ${p.idoma || ""} ${p.alala || ""}`).includes(text)) return false;
+      return true;
+    };
+    const optionHtml = (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.english)}${p.idoma ? " — " + escapeHtml(p.idoma) : (p.alala ? " — " + escapeHtml(p.alala) + " (Variant)" : " [Blank]")}${audioMap[p.id] ? " ✓" : ""}</option>`;
+    const clinical = clinicalPhrases().filter(keep);
+    const glossary = phrases.filter((p) => isGlossary(p) && keep(p));
+    sel.innerHTML = clinical.map(optionHtml).join("")
       + (glossary.length ? `<optgroup label="Common Terms Glossary">${glossary.map(optionHtml).join("")}</optgroup>` : "");
+    if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+    const info = $("audioFilterInfo");
+    if (info) info.textContent = `${clinical.length + glossary.length} matching`;
   }
 
   async function renderAdminDashboard() {
@@ -724,6 +803,25 @@
               <button type="button" class="btn btn-secondary" id="importGlossaryBtn">Import Glossary JSON</button>
             </div>
             <p id="glossaryImportStatus" class="small-note muted" style="margin:8px 0 0;"></p>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <strong>Dialect name shown in the app</strong>
+            <p class="muted small-note" style="margin:6px 0 8px;">
+              Changes how the Orokam dialect is labelled on cards, the recorder, forms and the guide. Confirm the preferred name with community speakers first. Leave blank to restore the default.
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input type="text" id="dialectLabelInput" style="min-width:220px; flex:1;" maxlength="60" value="${escapeHtml(alalaLabel)}" placeholder="e.g. Enone (Orokam)" />
+              <button type="button" class="btn btn-secondary" id="saveDialectLabelBtn">Save name</button>
+            </div>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <strong>Feedback inbox</strong>
+            <div style="margin-top:8px;">
+              <button type="button" class="btn btn-secondary" id="loadFeedbackBtn">Load latest feedback</button>
+            </div>
+            <div id="feedbackInbox" style="margin-top:8px;"></div>
           </div>
         </div>
 
@@ -875,6 +973,54 @@
           setStatusBanner("Import error: " + err.message, "warn");
         } finally {
           if (btn) btn.disabled = false;
+        }
+      });
+
+      applyDialectLabel();
+
+      $("saveDialectLabelBtn")?.addEventListener("click", async () => {
+        const val = ($("dialectLabelInput")?.value || "").trim();
+        try {
+          await saveSettingToDb("dialect_alala_label", val);
+          alalaLabel = val || ALALA_DEFAULT;
+          applyDialectLabel();
+          renderPhrases();
+          renderPracticeCard();
+          setStatusBanner(`Dialect name saved: ${alalaLabel}`, "success");
+        } catch (err) {
+          setStatusBanner("Could not save dialect name: " + err.message, "warn");
+        }
+      });
+
+      const renderFeedbackInbox = (rows) => {
+        const box = $("feedbackInbox");
+        if (!box) return;
+        const kinds = { wrong_term: "Term looks wrong", missing_term: "Term missing", bug: "Something broken", idea: "Idea", other: "Other" };
+        box.innerHTML = rows.length
+          ? rows.map((r) => `
+              <div class="panel" style="margin:8px 0; padding:10px;">
+                <div class="small-note muted">${escapeHtml(kinds[r.kind] || r.kind)} · ${escapeHtml(new Date(r.created_at).toLocaleString())} · ${escapeHtml(r.status)}</div>
+                <div style="margin:6px 0; white-space:pre-wrap;">${escapeHtml(r.message)}</div>
+                ${r.contact ? `<div class="small-note"><strong>Contact:</strong> ${escapeHtml(r.contact)}</div>` : ""}
+                ${r.status !== "done" ? `<button type="button" class="btn btn-sm btn-secondary" data-fb-done="${escapeHtml(r.id)}" style="margin-top:6px;">Mark done</button>` : ""}
+              </div>`).join("")
+          : `<p class="muted small-note">No feedback yet.</p>`;
+        box.querySelectorAll("[data-fb-done]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            try {
+              await DB.adminSetFeedbackStatus(session, btn.getAttribute("data-fb-done"), "done");
+              renderFeedbackInbox(await DB.adminListFeedback(session));
+            } catch (err) {
+              setStatusBanner("Could not update feedback: " + err.message, "warn");
+            }
+          });
+        });
+      };
+      $("loadFeedbackBtn")?.addEventListener("click", async () => {
+        try {
+          renderFeedbackInbox(await DB.adminListFeedback(session));
+        } catch (err) {
+          setStatusBanner("Could not load feedback: " + err.message, "warn");
         }
       });
 
@@ -1287,6 +1433,90 @@
       if (!$("audioSpokenText").value) refreshSpokenPrefill();
     });
 
+    // Recorder: find terms quickly (glossary, no-audio-yet) and upload an existing file
+    const refilterRecorder = () => {
+      populateAudioPhraseSelect();
+      $("audioPhraseSelect")?.dispatchEvent(new Event("change"));
+    };
+    $("audioPhraseFilter")?.addEventListener("input", refilterRecorder);
+    $("audioKindFilter")?.addEventListener("change", refilterRecorder);
+    $("audioNeedsOnly")?.addEventListener("change", refilterRecorder);
+
+    $("audioFileInput")?.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        if (!session) {
+          e.target.value = "";
+          setStatusBanner("Sign in with a contributor or admin access code to submit audio.", "warn");
+          return;
+        }
+        if (!/^audio\//.test(file.type) && !/\.(mp3|m4a|wav|webm|ogg|aac|opus)$/i.test(file.name)) {
+          throw new Error("Please choose an audio file (mp3, m4a, wav, webm or ogg).");
+        }
+        if (file.size > 5 * 1024 * 1024) throw new Error("That file is over 5 MB. Trim or compress it first.");
+        const url = URL.createObjectURL(file);
+        const durationMs = await new Promise((resolve) => {
+          const a = new Audio();
+          const done = (v) => resolve(v);
+          a.preload = "metadata";
+          a.onloadedmetadata = () => done(Number.isFinite(a.duration) ? Math.round(a.duration * 1000) : 0);
+          a.onerror = () => done(0);
+          a.src = url;
+          setTimeout(() => done(0), 4000);
+        });
+        recordedDraft = { blob: file, mimeType: file.type || "audio/mpeg", durationMs };
+        $("audioPreview").src = url;
+        $("audioPreview").hidden = false;
+        $("saveAudioBtn").disabled = false;
+        $("recordStateText").textContent = `Uploaded ${file.name} (${Math.round(durationMs / 1000)}s). Preview, then submit for approval.`;
+      } catch (err) {
+        recordedDraft = null;
+        e.target.value = "";
+        setStatusBanner(err.message, "warn");
+      }
+    });
+
+    // Scroll shortcuts
+    const topBtn = $("scrollTopBtn");
+    const botBtn = $("scrollBottomBtn");
+    const updateScrollBtns = () => {
+      const y = window.scrollY || 0;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (topBtn) topBtn.style.display = y > 300 ? "" : "none";
+      if (botBtn) botBtn.style.display = max - y > 300 ? "" : "none";
+    };
+    window.addEventListener("scroll", updateScrollBtns, { passive: true });
+    window.addEventListener("resize", updateScrollBtns);
+    if (window.ResizeObserver) new ResizeObserver(updateScrollBtns).observe(document.body);
+    topBtn?.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+    botBtn?.addEventListener("click", () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }));
+    updateScrollBtns();
+
+    // Feedback
+    $("fbSendBtn")?.addEventListener("click", async () => {
+      const btn = $("fbSendBtn");
+      const msg = ($("fbMessage")?.value || "").trim();
+      if (msg.length < 5) {
+        setStatusBanner("Please write a little more (at least 5 characters).", "warn");
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await DB.submitFeedback({ kind: $("fbKind").value, message: msg, contact: ($("fbContact")?.value || "").trim() });
+        $("fbMessage").value = "";
+        setStatusBanner("Thank you! Your feedback was sent.", "success");
+      } catch (err) {
+        setStatusBanner("Could not send feedback: " + err.message, "warn");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    $("footerFeedbackBtn")?.addEventListener("click", () => {
+      switchTab("aboutTab");
+      setTimeout(() => $("feedbackPanel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    });
+
     $("recordToggleBtn")?.addEventListener("click", async () => {
       try {
         if (!session) {
@@ -1447,6 +1677,8 @@
       if (!DB) throw new Error("PhraseDB failed to load. Check js/config.js and js/db.js for syntax errors.");
       DB.initClient();
       await syncDynamicAsrUrlFromDb();
+      await syncDialectLabelFromDb();
+      applyDialectLabel();
       session = DB.getSavedSession();
       trayIds = DB.getTrayIds();
       updateTrayBadge();
