@@ -79,6 +79,76 @@
     if (!res.ok) throw new Error(`Failed saving setting (${res.status}): ${await res.text()}`);
   }
 
+  // ---- Anonymous usage counts (no names, no patient data, no Listen transcripts) ----
+  const Usage = (() => {
+    const OPT_KEY = "usageOptOut";
+    let queue = [];
+    let timer = null;
+    const optedOut = () => {
+      try { if (localStorage.getItem(OPT_KEY) === "1") return true; } catch (_) { /* ignore */ }
+      return navigator.doNotTrack === "1" || window.doNotTrack === "1";
+    };
+    const anonId = (store, key) => {
+      try {
+        let v = store.getItem(key);
+        if (!v) {
+          v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          store.setItem(key, v);
+        }
+        return v;
+      } catch (_) { return null; }
+    };
+    const cleanTerm = (q) => {
+      const t = String(q || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 40);
+      // never keep anything that looks like a phone number, ID or email
+      if (!t || /\d{4,}/.test(t) || t.includes("@")) return null;
+      return t;
+    };
+    async function flush() {
+      timer = null;
+      if (!queue.length) return;
+      const cfg = window.APP_CONFIG || {};
+      if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) { queue = []; return; }
+      const batch = queue.splice(0, 40);
+      try {
+        await fetch(`${cfg.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/usage_events`, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            apikey: cfg.SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`,
+            Prefer: "return=minimal"
+          },
+          body: JSON.stringify(batch)
+        });
+      } catch (_) { /* usage counting must never disturb the app */ }
+    }
+    function log(event, detail) {
+      try {
+        if (optedOut() || !DB || !DB.isLive()) return;
+        queue.push({
+          event,
+          detail: detail ? String(detail).slice(0, 60) : null,
+          session_id: anonId(sessionStorage, "usageSid"),
+          device_id: anonId(localStorage, "usageDid")
+        });
+        if (!timer) timer = setTimeout(flush, 8000);
+      } catch (_) { /* ignore */ }
+    }
+    function openOnce() {
+      try {
+        if (sessionStorage.getItem("usageOpened") === "1") return;
+        sessionStorage.setItem("usageOpened", "1");
+      } catch (_) { /* ignore */ }
+      log("app_open");
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+    return { log, openOnce, cleanTerm, optedOut, setOptOut(v) { try { localStorage.setItem(OPT_KEY, v ? "1" : "0"); } catch (_) { /* ignore */ } } };
+  })();
+
   const isGlossary = (p) => p && p.entry_kind === "glossary";
   const clinicalPhrases = () => phrases.filter((p) => !isGlossary(p));
 
@@ -404,7 +474,7 @@
     const clip = audioMap[p.id];
     const isPinned = trayIds.has(String(p.id));
     const audioBtn = clip && clip.url
-      ? `<button type="button" class="btn btn-sm btn-primary" data-play-url="${escapeHtml(clip.url)}">Play Audio</button>`
+      ? `<button type="button" class="btn btn-sm btn-primary" data-play-url="${escapeHtml(clip.url)}" data-play-phrase="${escapeHtml(p.id)}">Play Audio</button>`
       : `<span class="muted small-note">No audio yet</span>`;
 
     const variantTag = p.variationLabel || alalaLabel;
@@ -451,6 +521,8 @@
     container.querySelectorAll("[data-play-url]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-play-url");
+        const played = phrases.find((x) => String(x.id) === String(btn.getAttribute("data-play-phrase")));
+        Usage.log("audio_played", played ? (played.code || null) : null);
         if (activeAudioEl) activeAudioEl.pause();
         activeAudioEl = new Audio(url);
         activeAudioEl.play().catch((e) => setStatusBanner("Could not play audio: " + e.message, "warn"));
@@ -460,8 +532,13 @@
     container.querySelectorAll("[data-pin-id]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const id = String(btn.getAttribute("data-pin-id"));
-        if (trayIds.has(id)) trayIds.delete(id);
-        else trayIds.add(id);
+        if (trayIds.has(id)) {
+          trayIds.delete(id);
+        } else {
+          trayIds.add(id);
+          const pinned = phrases.find((x) => String(x.id) === id);
+          Usage.log("phrase_pinned", pinned ? (pinned.code || null) : null);
+        }
         DB.saveTrayIds(trayIds);
         updateTrayBadge();
         renderPhrases();
@@ -791,6 +868,14 @@
             <button type="button" class="btn btn-secondary" id="saveLiveAsrUrlBtn">Save ASR URL</button>
           </div>
 
+          <div style="margin-top:6px;">
+            <strong>Stats</strong>
+            <div style="margin-top:8px;">
+              <button type="button" class="btn btn-secondary" id="loadStatsBtn">Load stats</button>
+            </div>
+            <div id="adminStatsBox" style="margin-top:8px;"></div>
+          </div>
+
           <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
             <strong>Common Terms Glossary</strong>
             <p class="muted small-note" style="margin:6px 0 8px;">
@@ -977,6 +1062,78 @@
       });
 
       applyDialectLabel();
+
+      const renderStatsHtml = (s) => {
+        const n = (v) => Number(v || 0);
+        const pct = (x, y) => (n(y) ? Math.round((n(x) / n(y)) * 100) + "%" : "0%");
+        const tile = (label, value, sub) => `
+          <div class="panel" style="padding:10px; text-align:center; margin:0;">
+            <div style="font-size:22px; font-weight:700;">${value}</div>
+            <div class="small-note muted">${label}${sub ? "<br>" + sub : ""}</div>
+          </div>`;
+        const st = s.clinical_by_status || {};
+        const au = s.audio_by_status || {};
+        const us = s.usage || {};
+        const ev = s.events_7d || {};
+        const tabs = s.tabs_7d || {};
+        const list = (rows, key) => (rows && rows.length)
+          ? `<ol style="margin:6px 0 0 18px; padding:0;">${rows.map((r) => `<li>${escapeHtml(r[key])} <span class="muted">(${n(r.count)})</span></li>`).join("")}</ol>`
+          : `<p class="muted small-note" style="margin:6px 0 0;">Nothing yet.</p>`;
+        const daily = Array.isArray(s.daily) ? s.daily : [];
+        const maxDay = Math.max(1, ...daily.map((d) => n(d.sessions)));
+        const bars = daily.map((d) => `
+          <div title="${escapeHtml(String(d.day))}: ${n(d.sessions)} sessions" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:70px;">
+            <div style="width:80%; background:var(--accent, #0f766e); border-radius:3px 3px 0 0; height:${Math.max(2, Math.round((n(d.sessions) / maxDay) * 60))}px;"></div>
+          </div>`).join("");
+        const grid = "display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px; margin-top:8px;";
+        return `
+          <div class="small-note muted">Content</div>
+          <div style="${grid}">
+            ${tile("Clinical phrases", n(s.clinical_total))}
+            ${tile("With approved audio", `${n(s.clinical_with_audio)} / ${n(s.clinical_total)}`, pct(s.clinical_with_audio, s.clinical_total))}
+            ${tile("Text-checked", n(st.verified))}
+            ${tile("Unconfirmed", n(st.unconfirmed))}
+            ${tile("Missing", n(st.missing))}
+            ${tile("Glossary terms", n(s.glossary_total), `${n(s.glossary_with_audio)} with audio`)}
+          </div>
+          <div class="small-note muted" style="margin-top:12px;">Needs your attention</div>
+          <div style="${grid}">
+            ${tile("Audio awaiting review", n(au.pending))}
+            ${tile("Submissions awaiting review", n(s.submissions_pending))}
+            ${tile("New feedback", n(s.feedback_new))}
+            ${tile("Active contributors", n(s.contributors_active))}
+          </div>
+          <div class="small-note muted" style="margin-top:12px;">Usage (anonymous; counting starts when this version is live)</div>
+          <div style="${grid}">
+            ${tile("Devices, last 7 days", n(us.devices_7d))}
+            ${tile("Devices, last 30 days", n(us.devices_30d))}
+            ${tile("Sessions, last 7 days", n(us.sessions_7d))}
+            ${tile("App opens, 7 days", n(us.opens_7d))}
+            ${tile("Searches, 7 days", n(ev.search) + n(ev.search_no_results), `${n(ev.search_no_results)} found nothing`)}
+            ${tile("Audio plays, 7 days", n(ev.audio_played))}
+            ${tile("Listen uses, 7 days", n(ev.listen_used))}
+            ${tile("Pinned to tray, 7 days", n(ev.phrase_pinned))}
+          </div>
+          <div class="small-note muted" style="margin-top:12px;">Sessions per day, last 14 days</div>
+          <div style="display:flex; gap:3px; align-items:flex-end; margin-top:6px;">${bars}</div>
+          <div class="small-note muted" style="margin-top:12px;"><strong>Searches that found nothing (30 days)</strong>, candidates to add</div>
+          ${list(s.top_missing, "term")}
+          <div class="small-note muted" style="margin-top:12px;"><strong>Most-played phrases (30 days)</strong></div>
+          ${list(s.top_played, "english")}
+          <div class="small-note muted" style="margin-top:12px;"><strong>Tabs opened (7 days)</strong></div>
+          <p class="small-note" style="margin:6px 0 0;">${Object.keys(tabs).length ? Object.entries(tabs).map(([k, v]) => `${escapeHtml(k)}: ${n(v)}`).join(" · ") : "Nothing yet."}</p>`;
+      };
+      $("loadStatsBtn")?.addEventListener("click", async () => {
+        const box = $("adminStatsBox");
+        if (!box) return;
+        box.innerHTML = '<p class="muted small-note">Loading...</p>';
+        try {
+          box.innerHTML = renderStatsHtml(await DB.adminStats(session));
+        } catch (err) {
+          box.innerHTML = "";
+          setStatusBanner("Could not load stats: " + err.message, "warn");
+        }
+      });
 
       $("saveDialectLabelBtn")?.addEventListener("click", async () => {
         const val = ($("dialectLabelInput")?.value || "").trim();
@@ -1224,6 +1381,7 @@
   }
 
   function switchTab(tabId) {
+    Usage.log("tab_view", tabId);
     document.querySelectorAll(".tab-btn").forEach((b) => {
       b.classList.toggle("active", b.getAttribute("data-tab") === tabId);
     });
@@ -1271,7 +1429,17 @@
 
     $("subType")?.addEventListener("change", toggleSubFormMode);
 
-    $("searchInput")?.addEventListener("input", renderPhrases);
+    let searchLogTimer = null;
+    $("searchInput")?.addEventListener("input", () => {
+      renderPhrases();
+      clearTimeout(searchLogTimer);
+      searchLogTimer = setTimeout(() => {
+        const q = ($("searchInput")?.value || "").trim();
+        if (q.length < 2) return;
+        if (getFilteredPhrases().length > 0) Usage.log("search");
+        else Usage.log("search_no_results", Usage.cleanTerm(q));
+      }, 1500);
+    });
     $("statusFilter")?.addEventListener("change", (e) => {
       activeStatus = e.target.value;
       renderPhrases();
@@ -1433,6 +1601,13 @@
       if (!$("audioSpokenText").value) refreshSpokenPrefill();
     });
 
+    // Privacy toggle for anonymous usage counts
+    const optBox = $("usageOptOut");
+    if (optBox) {
+      optBox.checked = Usage.optedOut();
+      optBox.addEventListener("change", () => Usage.setOptOut(optBox.checked));
+    }
+
     // Recorder: find terms quickly (glossary, no-audio-yet) and upload an existing file
     const refilterRecorder = () => {
       populateAudioPhraseSelect();
@@ -1505,6 +1680,7 @@
       try {
         await DB.submitFeedback({ kind: $("fbKind").value, message: msg, contact: ($("fbContact")?.value || "").trim() });
         $("fbMessage").value = "";
+        Usage.log("feedback_sent");
         setStatusBanner("Thank you! Your feedback was sent.", "success");
       } catch (err) {
         setStatusBanner("Could not send feedback: " + err.message, "warn");
@@ -1597,6 +1773,7 @@
           const matches = Array.isArray(result) ? result : (result.matches || []);
           const transcript = Array.isArray(result) ? null : result.transcript;
           const asrError = Array.isArray(result) ? null : result.asrError;
+          Usage.log("listen_used", matches.length ? "match" : "no_match");
 
           const statusNoteHtml = asrError
             ? `<div class="clinical-note" style="margin-top:0; margin-bottom:10px;">
@@ -1683,6 +1860,7 @@
       trayIds = DB.getTrayIds();
       updateTrayBadge();
       renderSessionUI();
+      Usage.openOnce();
 
       // 1. Render seed phrases immediately so the screen is usable right away
       seedPhrases = await DB.loadSeedPhrases();
