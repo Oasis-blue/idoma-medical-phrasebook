@@ -83,6 +83,54 @@
     } catch (_) { /* keep default */ }
   }
 
+  // Dialect list (admin-managed). 'other' is always offered as a built-in choice.
+  let dialects = [
+    { code: "idoma", label: "Idoma (general)" },
+    { code: "alala", label: ALALA_DEFAULT }
+  ];
+  const dialectLabelFor = (code) => {
+    if (!code) return "";
+    if (code === "other") return "Other dialect";
+    const d = dialects.find((x) => x.code === code);
+    return d ? d.label : code;
+  };
+  async function syncDialectsFromDb() {
+    if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) return;
+    try {
+      const url = `${window.APP_CONFIG.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/dialects?select=code,label,sort_order&is_active=eq.true&order=sort_order.asc`;
+      const res = await fetch(url, {
+        headers: {
+          apikey: window.APP_CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${window.APP_CONFIG.SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!res.ok) return;
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length) {
+        dialects = rows.map((r) => ({ code: r.code, label: r.label }));
+        const al = rows.find((r) => r.code === "alala");
+        alalaLabel = al ? al.label : ALALA_DEFAULT;
+      }
+    } catch (_) { /* keep defaults */ }
+  }
+  function renderDialectOptions() {
+    const sel = $("audioDialect");
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = dialects.map((d) => `<option value="${escapeHtml(d.code)}">${escapeHtml(d.label)}</option>`).join("")
+      + '<option value="other">Other dialect (say which in the note below)</option>';
+    if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+  }
+
+  async function refreshPhrasesFromDb() {
+    const refreshed = await DB.fetchPhrases(seedPhrases);
+    phrases = refreshed.phrases;
+    renderSectionPills();
+    populateAudioPhraseSelect();
+    renderPhrases();
+    renderPracticeCard();
+  }
+
   async function syncDialectLabelFromDb() {
     if (!DB || !DB.isLive() || !window.APP_CONFIG?.SUPABASE_URL || !window.APP_CONFIG?.SUPABASE_ANON_KEY) return;
     try {
@@ -546,9 +594,10 @@
           <button type="button" class="btn btn-sm ${isPinned ? "btn-pinned" : "btn-secondary"}" data-pin-id="${escapeHtml(p.id)}">
             ${isPinned ? "Pinned in Tray" : "+ Pin to Tray"}
           </button>
-          <div style="display:flex; gap:6px;">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
             ${session ? `<button type="button" class="btn btn-sm btn-secondary" data-record-phrase="${escapeHtml(p.id)}">Record Audio</button>` : ""}
             <button type="button" class="btn btn-sm btn-ghost" data-suggest-edit="${escapeHtml(p.id)}">Edit</button>
+            ${session && session.is_admin ? `<button type="button" class="btn btn-sm btn-ghost" data-hide-phrase="${escapeHtml(p.id)}">Hide</button><button type="button" class="btn btn-sm btn-ghost" data-delete-phrase="${escapeHtml(p.id)}" style="color:#b91c1c;">Delete</button>` : ""}
           </div>
         </div>
       </article>
@@ -592,6 +641,38 @@
         const recBtn = $("recordToggleBtn");
         recBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
         setTimeout(() => recBtn?.focus(), 200);
+      });
+    });
+
+    container.querySelectorAll("[data-hide-phrase]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = String(btn.getAttribute("data-hide-phrase"));
+        const target = phrases.find((x) => String(x.id) === id);
+        if (!target) return;
+        if (!confirm(`Hide "${target.english}" from the app?\n\nYou can restore it later from Admin Studio, under Hidden terms.`)) return;
+        try {
+          await DB.adminSetPhrasePublished(session, id, false);
+          await refreshPhrasesFromDb();
+          setStatusBanner("Term hidden. Restore it from Admin Studio, under Hidden terms.", "success");
+        } catch (err) {
+          setStatusBanner("Could not hide term: " + err.message, "warn");
+        }
+      });
+    });
+
+    container.querySelectorAll("[data-delete-phrase]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = String(btn.getAttribute("data-delete-phrase"));
+        const target = phrases.find((x) => String(x.id) === id);
+        if (!target) return;
+        if (!confirm(`Permanently delete "${target.english}"?\n\nThis also removes its audio recordings from the app and cannot be undone. Choose Hide instead if you might want it back.`)) return;
+        try {
+          await DB.adminDeletePhrase(session, id);
+          await refreshPhrasesFromDb();
+          setStatusBanner("Term deleted.", "success");
+        } catch (err) {
+          setStatusBanner("Could not delete term: " + err.message, "warn");
+        }
       });
     });
 
@@ -929,14 +1010,24 @@
           </div>
 
           <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
-            <strong>Dialect name shown in the app</strong>
+            <strong>Dialects</strong>
             <p class="muted small-note" style="margin:6px 0 8px;">
-              Changes how the Orokam dialect is labelled on cards, the recorder, forms and the guide. Confirm the preferred name with community speakers first. Leave blank to restore the default.
+              Names used in the recorder, audio labels and cards. Rename a dialect, change its order, or hide it. A code can't change once created.
+              Confirm preferred names with community speakers first.
             </p>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <input type="text" id="dialectLabelInput" style="min-width:220px; flex:1;" maxlength="60" value="${escapeHtml(alalaLabel)}" placeholder="e.g. Enone (Orokam)" />
-              <button type="button" class="btn btn-secondary" id="saveDialectLabelBtn">Save name</button>
+            <div id="dialectAdminBox"><p class="muted small-note">Loading...</p></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+              <input type="text" id="newDialectCode" maxlength="24" placeholder="code, e.g. enone" style="width:130px;" />
+              <input type="text" id="newDialectLabel" maxlength="60" placeholder="Label, e.g. Enone (Orokam)" style="flex:1; min-width:180px;" />
+              <button type="button" class="btn btn-secondary" id="addDialectBtn">Add dialect</button>
             </div>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
+            <strong>Hidden terms</strong>
+            <p class="muted small-note" style="margin:6px 0 8px;">Terms you hid with the Hide button on a card. Restore them here.</p>
+            <button type="button" class="btn btn-secondary" id="loadHiddenBtn">Show hidden terms</button>
+            <div id="hiddenTermsBox" style="margin-top:8px;"></div>
           </div>
 
           <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border, #dce5e1);">
@@ -1055,7 +1146,7 @@
               return `
                 <div class="mod-item">
                   <strong>Phrase:</strong> ${escapeHtml(phrase ? phrase.english : a.phrase_id)}<br/>
-                  ${a.dialect ? `<strong>Dialect:</strong> ${escapeHtml(a.dialect)}<br/>` : ""}
+                  ${a.dialect ? `<strong>Dialect:</strong> ${escapeHtml(dialectLabelFor(a.dialect))}<br/>` : ""}
                   ${a.spoken_text ? `<strong>Written as:</strong> ${escapeHtml(a.spoken_text)}<br/>` : "<em>No written text saved.</em><br/>"}
                   ${a.dialect_note ? `<strong>Dialect note:</strong> ${escapeHtml(a.dialect_note)}<br/>` : ""}
                   ${src ? `<audio controls src="${escapeHtml(src)}" class="audio-player"></audio>` : ""}
@@ -1182,19 +1273,97 @@
         }
       });
 
-      $("saveDialectLabelBtn")?.addEventListener("click", async () => {
-        const val = ($("dialectLabelInput")?.value || "").trim();
+      const loadDialectAdmin = async () => {
+        const box = $("dialectAdminBox");
+        if (!box) return;
         try {
-          await saveSettingToDb("dialect_alala_label", val);
-          alalaLabel = val || ALALA_DEFAULT;
-          applyDialectLabel();
-          renderPhrases();
-          renderPracticeCard();
-          setStatusBanner(`Dialect name saved: ${alalaLabel}`, "success");
+          const rows = await DB.adminListDialects(session);
+          box.innerHTML = rows.map((d) => `
+            <div data-dialect-row="${escapeHtml(d.code)}" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+              <code style="min-width:64px;">${escapeHtml(d.code)}</code>
+              <input type="text" data-d-label maxlength="60" value="${escapeHtml(d.label)}" style="flex:1; min-width:150px;" />
+              <input type="number" data-d-order value="${Number(d.sort_order)}" style="width:68px;" aria-label="Order" />
+              <label style="display:flex; align-items:center; gap:4px; font-size:13px;">
+                <input type="checkbox" data-d-active ${d.is_active ? "checked" : ""} ${d.code === "idoma" ? "disabled" : ""} style="width:auto;" /> Active
+              </label>
+              <button type="button" class="btn btn-sm btn-secondary" data-d-save="${escapeHtml(d.code)}">Save</button>
+            </div>`).join("") || '<p class="muted small-note">No dialects yet.</p>';
+          box.querySelectorAll("[data-d-save]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const row = btn.closest("[data-dialect-row]");
+              try {
+                await DB.adminUpsertDialect(session, {
+                  code: btn.getAttribute("data-d-save"),
+                  label: row.querySelector("[data-d-label]").value,
+                  sortOrder: Number(row.querySelector("[data-d-order]").value) || 100,
+                  isActive: row.querySelector("[data-d-active]").checked
+                });
+                await afterDialectChange();
+                setStatusBanner("Dialect saved.", "success");
+              } catch (err) {
+                setStatusBanner("Could not save dialect: " + err.message, "warn");
+              }
+            });
+          });
         } catch (err) {
-          setStatusBanner("Could not save dialect name: " + err.message, "warn");
+          box.innerHTML = `<p class="muted small-note">Dialects unavailable: ${escapeHtml(err.message)}. Run the latest schema.sql.</p>`;
+        }
+      };
+      const afterDialectChange = async () => {
+        await syncDialectsFromDb();
+        renderDialectOptions();
+        applyDialectLabel();
+        renderPhrases();
+        renderPracticeCard();
+        await loadDialectAdmin();
+      };
+      $("addDialectBtn")?.addEventListener("click", async () => {
+        const code = ($("newDialectCode")?.value || "").trim().toLowerCase();
+        const label = ($("newDialectLabel")?.value || "").trim();
+        try {
+          await DB.adminUpsertDialect(session, { code, label, sortOrder: 100, isActive: true });
+          $("newDialectCode").value = "";
+          $("newDialectLabel").value = "";
+          await afterDialectChange();
+          setStatusBanner(`Dialect added: ${label}`, "success");
+        } catch (err) {
+          setStatusBanner("Could not add dialect: " + err.message, "warn");
         }
       });
+      loadDialectAdmin();
+
+      const loadHiddenTerms = async () => {
+        const box = $("hiddenTermsBox");
+        if (!box) return;
+        try {
+          const rows = await DB.adminListHiddenPhrases(session);
+          box.innerHTML = rows.length
+            ? rows.map((r) => `
+              <div class="panel" style="margin:6px 0; padding:8px; display:flex; gap:8px; align-items:center; justify-content:space-between;">
+                <div>
+                  <strong>${escapeHtml(r.english_term)}</strong> <span class="muted small-note">${escapeHtml(r.idoma_term || "")}</span>
+                  <div class="muted small-note">${escapeHtml(r.section || "")}</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" data-restore="${escapeHtml(r.id)}">Restore</button>
+              </div>`).join("")
+            : '<p class="muted small-note">No hidden terms.</p>';
+          box.querySelectorAll("[data-restore]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              try {
+                await DB.adminSetPhrasePublished(session, btn.getAttribute("data-restore"), true);
+                await refreshPhrasesFromDb();
+                await loadHiddenTerms();
+                setStatusBanner("Term restored.", "success");
+              } catch (err) {
+                setStatusBanner("Could not restore term: " + err.message, "warn");
+              }
+            });
+          });
+        } catch (err) {
+          box.innerHTML = `<p class="muted small-note">Hidden terms unavailable: ${escapeHtml(err.message)}</p>`;
+        }
+      };
+      $("loadHiddenBtn")?.addEventListener("click", loadHiddenTerms);
 
       $("saveAckBtn")?.addEventListener("click", async () => {
         const text = ($("ackInput")?.value || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean).join("\n");
@@ -1645,7 +1814,7 @@
       if (!sel || !textEl) return;
       const p = phrases.find((x) => String(x.id) === String(sel.value));
       const dialect = $("audioDialect") ? $("audioDialect").value : "idoma";
-      const entry = p ? String((dialect === "alala" ? p.alala : p.idoma) || "").trim() : "";
+      const entry = p ? String((dialect === "alala" ? p.alala : (dialect === "idoma" ? p.idoma : "")) || "").trim() : "";
       const first = entry.split("/")[0].replace(/\(.*?\)/g, "").replace(/["“”]/g, "").trim();
       textEl.value = first;
       if (hintEl) {
@@ -1913,7 +2082,8 @@
       if (!DB) throw new Error("PhraseDB failed to load. Check js/config.js and js/db.js for syntax errors.");
       DB.initClient();
       await syncDynamicAsrUrlFromDb();
-      await syncDialectLabelFromDb();
+      await syncDialectsFromDb();
+      renderDialectOptions();
       applyDialectLabel();
       await syncAckFromDb();
       applySpecialAck();
