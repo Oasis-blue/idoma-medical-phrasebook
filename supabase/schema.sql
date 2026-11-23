@@ -120,7 +120,7 @@ create table if not exists public.audio_clips (
 );
 
 -- Labels for speech-model training: which dialect was spoken, and the exact written text
-alter table public.audio_clips add column if not exists dialect text;      -- 'idoma' | 'alala' | 'other'
+alter table public.audio_clips add column if not exists dialect text;      -- a code from public.dialects, or 'other'
 alter table public.audio_clips add column if not exists spoken_text text;  -- exactly what the speaker said
 
 create index if not exists idx_audio_phrase_status on public.audio_clips (phrase_id, approval_status, is_primary desc);
@@ -192,7 +192,7 @@ with check (
 -- Only the live ASR URL setting is readable by the public
 drop policy if exists "Public read asr setting" on public.app_settings;
 create policy "Public read asr setting"
-on public.app_settings for select using (key in ('idoma_asr_url', 'dialect_alala_label'));
+on public.app_settings for select using (key in ('idoma_asr_url', 'dialect_alala_label', 'special_acknowledgments'));
 
 drop policy if exists "Public upload idoma audio" on storage.objects;
 create policy "Public upload idoma audio"
@@ -215,7 +215,8 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in (
-        'admin_stats', 'admin_list_feedback', 'admin_update_feedback', 'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
+        'admin_upsert_dialect', 'admin_list_dialects', 'admin_set_phrase_published',
+        'admin_delete_phrase', 'admin_list_hidden_phrases', 'admin_stats', 'admin_list_feedback', 'admin_update_feedback', 'admin_import_glossary', 'verify_contributor_code', 'get_public_credits', 'submit_phrase_entry',
         'register_audio_clip', 'admin_list_contributors', 'admin_upsert_contributor',
         'admin_delete_contributor', 'admin_list_submissions', 'admin_review_submission',
         'admin_list_audio_clips', 'admin_review_audio_clip', 'admin_upsert_phrase',
@@ -362,8 +363,9 @@ begin
     raise exception 'Invalid or inactive contributor code.';
   end if;
 
-  if v_dialect is not null and v_dialect not in ('idoma', 'alala', 'other') then
-    raise exception 'Dialect must be idoma, alala or other.';
+  if v_dialect is not null and v_dialect <> 'other'
+     and not exists (select 1 from public.dialects where code = v_dialect and is_active) then
+    raise exception 'Unknown or inactive dialect.';
   end if;
 
   if nullif(trim(p_spoken_text), '') is null then
@@ -1001,6 +1003,119 @@ begin
   ) into v;
 
   return v;
+end;
+$$;
+
+
+-- 14. Dialect list + hide/delete terms ----------------------------------------------------
+create table if not exists public.dialects (
+  code text primary key check (code ~ '^[a-z][a-z0-9-]{1,23}$'),
+  label text not null check (char_length(label) between 1 and 60),
+  sort_order integer not null default 100,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.dialects enable row level security;
+
+drop policy if exists "Public read dialects" on public.dialects;
+create policy "Public read dialects"
+on public.dialects for select using (is_active = true);
+
+insert into public.dialects (code, label, sort_order)
+values
+  ('idoma', 'Idoma (general)', 1),
+  ('alala', coalesce((select nullif(trim(value), '') from public.app_settings where key = 'dialect_alala_label'), 'Alala (Orokam)'), 2)
+on conflict (code) do nothing;
+
+create or replace function public.admin_list_dialects(p_admin_code text)
+returns setof public.dialects
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  return query select * from public.dialects order by sort_order, code;
+end;
+$$;
+
+create or replace function public.admin_upsert_dialect(
+  p_admin_code text, p_code text, p_label text, p_sort_order integer, p_is_active boolean
+)
+returns public.dialects
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+  v_code text := lower(trim(p_code));
+  v_row public.dialects%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+
+  if v_code !~ '^[a-z][a-z0-9-]{1,23}$' then
+    raise exception 'Code must be 2 to 24 lowercase letters, numbers or hyphens, starting with a letter.';
+  end if;
+  if v_code = 'other' then raise exception 'The code "other" is reserved.'; end if;
+  if nullif(trim(p_label), '') is null then raise exception 'A label is required.'; end if;
+  if v_code = 'idoma' and p_is_active is false then
+    raise exception 'The general Idoma entry cannot be hidden.';
+  end if;
+
+  insert into public.dialects (code, label, sort_order, is_active)
+  values (v_code, trim(p_label), coalesce(p_sort_order, 100), coalesce(p_is_active, true))
+  on conflict (code) do update set
+    label = excluded.label,
+    sort_order = excluded.sort_order,
+    is_active = excluded.is_active
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Hide a term from the app (reversible)
+create or replace function public.admin_set_phrase_published(p_admin_code text, p_phrase_id uuid, p_published boolean)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  update public.phrases set is_published = coalesce(p_published, true) where id = p_phrase_id;
+  if not found then raise exception 'Term not found.'; end if;
+end;
+$$;
+
+-- Permanently delete a term (also removes its audio clip records and per-dialect forms)
+create or replace function public.admin_delete_phrase(p_admin_code text, p_phrase_id uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  delete from public.phrases where id = p_phrase_id;
+  if not found then raise exception 'Term not found.'; end if;
+end;
+$$;
+
+create or replace function public.admin_list_hidden_phrases(p_admin_code text)
+returns setof public.phrases
+language plpgsql security definer set search_path = public as $$
+declare
+  v_admin public.contributors%rowtype;
+begin
+  select * into v_admin from public.contributors
+  where access_code = trim(p_admin_code) and is_active = true and is_admin = true;
+  if v_admin.id is null then raise exception 'Admin privileges required.'; end if;
+  return query select * from public.phrases where is_published = false order by updated_at desc limit 200;
 end;
 $$;
 
