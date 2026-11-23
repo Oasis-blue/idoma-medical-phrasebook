@@ -612,6 +612,52 @@
     if (error) throw new Error(error.message);
   }
 
+  async function adminListDialects(session) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Dialects need the live database.");
+    const { data, error } = await supabaseClient.rpc("admin_list_dialects", { p_admin_code: session.access_code });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function adminUpsertDialect(session, { code, label, sortOrder, isActive }) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    const { error } = await supabaseClient.rpc("admin_upsert_dialect", {
+      p_admin_code: session.access_code,
+      p_code: code,
+      p_label: label,
+      p_sort_order: sortOrder,
+      p_is_active: isActive
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async function adminSetPhrasePublished(session, phraseId, published) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Hiding terms needs the live database.");
+    const { error } = await supabaseClient.rpc("admin_set_phrase_published", {
+      p_admin_code: session.access_code, p_phrase_id: phraseId, p_published: published
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async function adminDeletePhrase(session, phraseId) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Deleting terms needs the live database.");
+    const { error } = await supabaseClient.rpc("admin_delete_phrase", {
+      p_admin_code: session.access_code, p_phrase_id: phraseId
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async function adminListHiddenPhrases(session) {
+    if (!session || !session.is_admin) throw new Error("Admin access required.");
+    if (!(isLiveDb && supabaseClient)) throw new Error("Hidden terms need the live database.");
+    const { data, error } = await supabaseClient.rpc("admin_list_hidden_phrases", { p_admin_code: session.access_code });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
   async function adminStats(session) {
     if (!session || !session.is_admin) throw new Error("Admin access required.");
     if (!(isLiveDb && supabaseClient)) throw new Error("Stats need the live database.");
@@ -684,6 +730,11 @@
     submitFeedback,
     adminListFeedback,
     adminStats,
+    adminListDialects,
+    adminUpsertDialect,
+    adminSetPhrasePublished,
+    adminDeletePhrase,
+    adminListHiddenPhrases,
     adminSetFeedbackStatus
   };
 })();
