@@ -1611,7 +1611,10 @@
   function switchTab(tabId) {
     Usage.log("tab_view", tabId);
     document.querySelectorAll(".tab-btn").forEach((b) => {
-      b.classList.toggle("active", b.getAttribute("data-tab") === tabId);
+      const isActive = b.getAttribute("data-tab") === tabId;
+      b.classList.toggle("active", isActive);
+      b.setAttribute("aria-selected", String(isActive));
+      b.setAttribute("tabindex", isActive ? "0" : "-1");
     });
     document.querySelectorAll(".tab-panel").forEach((panel) => {
       panel.hidden = panel.id !== tabId;
@@ -1631,12 +1634,27 @@
       .replace(/\x26/g, "\x26amp;")
       .replace(/\x3c/g, "\x26lt;")
       .replace(/\x3e/g, "\x26gt;")
-      .replace(/\x22/g, "\x26quot;");
+      .replace(/\x22/g, "\x26quot;")
+      .replace(/\x27/g, "\x26#39;");
   }
 
   function bindEvents() {
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
+    const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
+    tabBtns.forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
+    });
+    // Arrow-key navigation across the tab strip, per WAI-ARIA tabs pattern
+    document.querySelector(".tabs-nav")?.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+      const current = tabBtns.findIndex((b) => b.classList.contains("active"));
+      let next;
+      if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = tabBtns.length - 1;
+      else next = e.key === "ArrowRight" ? current + 1 : current - 1;
+      next = (next + tabBtns.length) % tabBtns.length;
+      tabBtns[next].focus();
+      switchTab(tabBtns[next].getAttribute("data-tab"));
+      e.preventDefault();
     });
 
     $("dismissDisclaimerBtn")?.addEventListener("click", () => {
@@ -1658,8 +1676,10 @@
     $("subType")?.addEventListener("change", toggleSubFormMode);
 
     let searchLogTimer = null;
+    let searchRenderTimer = null;
     $("searchInput")?.addEventListener("input", () => {
-      renderPhrases();
+      clearTimeout(searchRenderTimer);
+      searchRenderTimer = setTimeout(renderPhrases, 120);
       clearTimeout(searchLogTimer);
       searchLogTimer = setTimeout(() => {
         const q = ($("searchInput")?.value || "").trim();
@@ -2075,6 +2095,54 @@
     });
   }
 
+  function showLoadError(message) {
+    const box = $("loadErrorBox");
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = `
+      <h3>Couldn't load the phrase list</h3>
+      <p class="muted small-note">${escapeHtml(message)} Check your connection and try again.</p>
+      <button type="button" class="btn btn-primary btn-sm" id="retryLoadBtn">Retry</button>
+    `;
+    $("retryLoadBtn")?.addEventListener("click", async () => {
+      box.hidden = true;
+      box.innerHTML = "";
+      await loadPhraseData();
+    });
+  }
+
+  async function loadPhraseData() {
+    // 1. Render seed phrases immediately so the screen is usable right away
+    seedPhrases = await DB.loadSeedPhrases();
+    phrases = seedPhrases;
+    renderSectionPills();
+    populateAudioPhraseSelect();
+    renderPhrases();
+
+    // 2. Fetch live Supabase phrases, approved audio, and credits in parallel
+    const [fetched, liveAudioMap, liveCredits] = await Promise.all([
+      DB.fetchPhrases(seedPhrases),
+      DB.fetchApprovedAudioMap(),
+      DB.fetchPublicCredits()
+    ]);
+
+    phrases = fetched.phrases;
+    audioMap = liveAudioMap;
+    credits = liveCredits;
+
+    renderSectionPills();
+    populateAudioPhraseSelect();
+    renderPhrases();
+    renderTray();
+    renderPracticeCard();
+    renderCredits();
+    renderGuideToneExamples();
+
+    if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
+      setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
+    }
+  }
+
   async function init() {
     try {
       bindEvents();
@@ -2093,40 +2161,12 @@
       renderSessionUI();
       Usage.openOnce();
 
-      // 1. Render seed phrases immediately so the screen is usable right away
-      seedPhrases = await DB.loadSeedPhrases();
-      phrases = seedPhrases;
-      renderSectionPills();
-      populateAudioPhraseSelect();
-      renderPhrases();
-
-      // 2. Fetch live Supabase phrases, approved audio, and credits in parallel
-      const [fetched, liveAudioMap, liveCredits] = await Promise.all([
-        DB.fetchPhrases(seedPhrases),
-        DB.fetchApprovedAudioMap(),
-        DB.fetchPublicCredits()
-      ]);
-
-      phrases = fetched.phrases;
-      audioMap = liveAudioMap;
-      credits = liveCredits;
-
-      renderSectionPills();
-      populateAudioPhraseSelect();
-      renderPhrases();
-      renderTray();
-      renderPracticeCard();
-      renderCredits();
-      renderGuideToneExamples();
-
-      if (DB.isLive() && fetched.source === "supabase-empty-fallback" && session && session.is_admin) {
-        setStatusBanner("Supabase connected! Database table is currently empty—open Admin Studio and click 'Import / Sync Seed JSON to DB' to populate all entries.", "info");
-      }
+      await loadPhraseData();
     } catch (err) {
       console.error("App init failed:", err);
       const countEl = $("resultCount");
-      if (countEl) countEl.textContent = "Startup error — see banner below";
-      setStatusBanner("Startup error: " + (err?.message || err), "warn");
+      if (countEl) countEl.textContent = "Couldn't load phrases";
+      showLoadError(err?.message || String(err));
     }
   }
 

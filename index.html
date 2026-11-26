@@ -165,18 +165,18 @@
     <div id="systemNotice" class="notice-banner" role="status" aria-live="polite" hidden></div>
 
     <!-- Navigation Tabs -->
-    <nav class="tabs-nav" aria-label="Main Sections">
-      <button type="button" class="tab-btn active" data-tab="finderTab">Phrase Finder</button>
-      <button type="button" class="tab-btn" data-tab="trayTab">Bedside Tray <span id="trayCountBadge" class="count-badge">0</span></button>
-      <button type="button" class="tab-btn" data-tab="practiceTab">Pronunciation &amp; Recall</button>
-      <button type="button" class="tab-btn" data-tab="listenTab">Listen &amp; Point</button>
-      <button type="button" class="tab-btn" data-tab="contributeTab">Contribute / Volunteer</button>
-      <button type="button" class="tab-btn" data-tab="aboutTab">Guide &amp; Credits</button>
-      <button type="button" class="tab-btn" data-tab="adminTab" hidden>Admin Studio</button>
+    <nav class="tabs-nav" aria-label="Main Sections" role="tablist">
+      <button type="button" role="tab" aria-selected="true" aria-controls="finderTab" id="tab-finderTab" class="tab-btn active" data-tab="finderTab">Phrase Finder</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="trayTab" id="tab-trayTab" tabindex="-1" class="tab-btn" data-tab="trayTab">Bedside Tray <span id="trayCountBadge" class="count-badge">0</span></button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="practiceTab" id="tab-practiceTab" tabindex="-1" class="tab-btn" data-tab="practiceTab">Pronunciation &amp; Recall</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="listenTab" id="tab-listenTab" tabindex="-1" class="tab-btn" data-tab="listenTab">Listen &amp; Point</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="contributeTab" id="tab-contributeTab" tabindex="-1" class="tab-btn" data-tab="contributeTab">Contribute / Volunteer</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="aboutTab" id="tab-aboutTab" tabindex="-1" class="tab-btn" data-tab="aboutTab">Guide &amp; Credits</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="adminTab" id="tab-adminTab" tabindex="-1" class="tab-btn" data-tab="adminTab" hidden>Admin Studio</button>
     </nav>
 
     <!-- 1. PHRASE FINDER TAB -->
-    <section id="finderTab" class="tab-panel active">
+    <section id="finderTab" class="tab-panel active" role="tabpanel" aria-labelledby="tab-finderTab">
       <div class="panel finder-toolbar">
         <div class="controls-bar">
           <input
@@ -212,11 +212,12 @@
       </div>
 
       <div id="fallbackBox" class="fallback-box" hidden></div>
+      <div id="loadErrorBox" class="fallback-box load-error" hidden></div>
       <div id="phraseList" class="phrase-grid"></div>
     </section>
 
     <!-- 2. BEDSIDE TRAY TAB -->
-    <section id="trayTab" class="tab-panel" hidden>
+    <section id="trayTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-trayTab" hidden>
       <div class="panel">
         <div class="panel-header-row">
           <div>
@@ -235,7 +236,7 @@
     </section>
 
     <!-- 3. PRACTICE TAB -->
-    <section id="practiceTab" class="tab-panel" hidden>
+    <section id="practiceTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-practiceTab" hidden>
       <div class="practice-shell">
         <div class="panel">
           <div class="panel-header-row">
@@ -250,7 +251,7 @@
     </section>
 
     <!-- 4. LISTEN & POINT TAB -->
-    <section id="listenTab" class="tab-panel" hidden>
+    <section id="listenTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-listenTab" hidden>
       <div class="two-col">
         <div class="panel">
           <h3>Patient Speech Helper</h3>
@@ -285,7 +286,7 @@
     </section>
 
     <!-- 5. CONTRIBUTE / REQUEST / VOLUNTEER TAB -->
-    <section id="contributeTab" class="tab-panel" hidden>
+    <section id="contributeTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-contributeTab" hidden>
       <div class="two-col">
         <form id="phraseSubForm" class="panel stack-form">
           <h3 id="subFormHeading">Submit Translation, Dialect Variant, Request, or Volunteer Application</h3>
@@ -511,7 +512,7 @@
     </section>
 
     <!-- 6. GUIDE & CREDITS TAB -->
-    <section id="aboutTab" class="tab-panel" hidden>
+    <section id="aboutTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-aboutTab" hidden>
       <div class="about-stack">
         <div class="panel">
           <h3>Why Tone & Dialects Matter in Clinical Idoma</h3>
@@ -585,7 +586,7 @@
     </section>
 
     <!-- 7. ADMIN STUDIO TAB -->
-    <section id="adminTab" class="tab-panel" hidden>
+    <section id="adminTab" class="tab-panel" role="tabpanel" aria-labelledby="tab-adminTab" hidden>
       <div id="adminContent"></div>
     </section>
   </main>
