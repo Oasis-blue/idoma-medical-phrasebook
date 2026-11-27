@@ -807,7 +807,19 @@
     `;
 
     if (pool.length === 0) {
-      cardEl.innerHTML = `${controlsHtml}<p class="muted">No translated phrases available for this section yet.</p>`;
+      cardEl.innerHTML = `${controlsHtml}
+        <div class="empty-state">
+          <svg class="empty-illust" width="128" height="84" viewBox="0 0 128 84" fill="none" aria-hidden="true">
+            <rect x="10" y="22" width="64" height="46" rx="9" fill="var(--surface-alt)" stroke="var(--accent)" stroke-width="2" />
+            <rect x="19" y="33" width="34" height="5" rx="2.5" fill="var(--accent)" opacity="0.55" />
+            <rect x="19" y="44" width="46" height="5" rx="2.5" fill="var(--border)" />
+            <rect x="19" y="55" width="26" height="5" rx="2.5" fill="var(--border)" />
+            <rect x="84" y="34" width="34" height="24" rx="7" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+            <path d="M101 41v10M96 46h10" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" />
+          </svg>
+          <p><strong>No practice cards in this section yet.</strong></p>
+          <p class="muted small-note">Once entries have verified translations, they appear here as recall cards. Try another section, or check the Phrase Finder.</p>
+        </div>`;
       return;
     }
 
@@ -2111,7 +2123,24 @@
     });
   }
 
+  function renderSkeletons(count = 6) {
+    const listEl = $("phraseList");
+    if (!listEl) return;
+    listEl.innerHTML = Array.from({ length: count }, (_, i) => `
+      <div class="phrase-card skeleton-card" aria-hidden="true">
+        <div>
+          <div class="sk sk-line" style="width:${38 + (i % 3) * 12}%"></div>
+          <div class="sk sk-title"></div>
+          <div class="sk sk-block"></div>
+          <div class="sk sk-block" style="width:78%"></div>
+        </div>
+        <div class="card-actions"><div class="sk sk-btn"></div></div>
+      </div>
+    `).join("");
+  }
+
   async function loadPhraseData() {
+    renderSkeletons();
     // 1. Render seed phrases immediately so the screen is usable right away
     seedPhrases = await DB.loadSeedPhrases();
     phrases = seedPhrases;

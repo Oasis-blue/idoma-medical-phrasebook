@@ -584,6 +584,29 @@ body.bedside-active .idoma-term { color: #5eead4; }
   margin-top: 12px;
 }
 
+.empty-illust { display: block; margin: 4px auto 10px; }
+
+/* Skeleton loading placeholders */
+.skeleton-card { pointer-events: none; }
+.sk {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-alt) 25%, rgba(255, 255, 255, 0.6) 50%, var(--surface-alt) 75%);
+  background-size: 200% 100%;
+  animation: skShimmer 1.4s ease-in-out infinite;
+}
+@keyframes skShimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.sk-line { height: 10px; }
+.sk-title { height: 22px; margin: 10px 0 14px; }
+.sk-block { height: 42px; margin-bottom: 9px; }
+.sk-btn { height: 30px; width: 110px; }
+body.bedside-active .sk {
+  background: linear-gradient(90deg, var(--surface-alt) 25%, rgba(255, 255, 255, 0.09) 50%, var(--surface-alt) 75%);
+  background-size: 200% 100%;
+}
+
 .stack-form label {
   display: flex;
   flex-direction: column;
