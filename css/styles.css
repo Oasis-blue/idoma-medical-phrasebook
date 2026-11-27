@@ -340,7 +340,12 @@ body.bedside-active {
   padding-top: 12px;
   margin-top: 12px;
   border-top: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
 }
+.section-pills::-webkit-scrollbar { height: 4px; }
+.section-pills::-webkit-scrollbar-track { background: transparent; }
+.section-pills::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 999px; }
 
 .sec-pill {
   padding: 6px 12px;
