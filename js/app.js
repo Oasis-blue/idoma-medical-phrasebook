@@ -627,7 +627,16 @@
           Usage.log("phrase_pinned", pinned ? (pinned.code || null) : null);
         }
         DB.saveTrayIds(trayIds);
+        const justPinned = trayIds.has(id);
         updateTrayBadge();
+        if (justPinned) {
+          const badge = $("trayCountBadge");
+          if (badge) {
+            badge.classList.remove("badge-pop");
+            void badge.offsetWidth;
+            badge.classList.add("badge-pop");
+          }
+        }
         renderPhrases();
         renderTray();
       });
@@ -1631,6 +1640,12 @@
     document.querySelectorAll(".tab-panel").forEach((panel) => {
       panel.hidden = panel.id !== tabId;
     });
+    const activePanel = document.getElementById(tabId);
+    if (activePanel) {
+      activePanel.classList.remove("panel-enter");
+      void activePanel.offsetWidth;
+      activePanel.classList.add("panel-enter");
+    }
     if (tabId === "trayTab") renderTray();
     if (tabId === "practiceTab") renderPracticeCard();
     if (tabId === "contributeTab") {
