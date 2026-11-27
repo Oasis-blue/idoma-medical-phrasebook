@@ -791,6 +791,29 @@
     bindCardInteractions(trayList);
   }
 
+  function renderGlossaryList() {
+    const listEl = $("glossaryList");
+    const emptyState = $("glossaryEmptyState");
+    const countEl = $("glossaryCount");
+    if (!listEl) return;
+
+    const q = normalizeForFilter($("glossarySearchInput")?.value || "");
+    const all = phrases.filter((p) => isGlossary(p));
+    const items = all
+      .filter((p) => !q || normalizeForFilter(`${p.english} ${p.idoma || ""} ${p.alala || ""} ${p.clinical || ""}`).includes(q))
+      .sort((a, b) => a.english.localeCompare(b.english));
+
+    if (countEl) countEl.textContent = `Showing ${items.length} of ${all.length} everyday terms`;
+    if (items.length === 0) {
+      listEl.innerHTML = "";
+      if (emptyState) emptyState.hidden = false;
+      return;
+    }
+    if (emptyState) emptyState.hidden = true;
+    listEl.innerHTML = items.map(createCardHtml).join("");
+    bindCardInteractions(listEl);
+  }
+
   function renderPracticeCard() {
     const cardEl = $("practiceCard");
     if (!cardEl) return;
@@ -1647,6 +1670,7 @@
       activePanel.classList.add("panel-enter");
     }
     if (tabId === "trayTab") renderTray();
+    if (tabId === "glossaryTab") renderGlossaryList();
     if (tabId === "practiceTab") renderPracticeCard();
     if (tabId === "contributeTab") {
       renderContributeGuestNotice();
@@ -1750,6 +1774,8 @@
       renderTray();
       renderPhrases();
     });
+
+    $("glossarySearchInput")?.addEventListener("input", renderGlossaryList);
 
     $("goFinderFromTrayBtn")?.addEventListener("click", () => switchTab("finderTab"));
 
