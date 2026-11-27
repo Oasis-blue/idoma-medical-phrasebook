@@ -806,7 +806,22 @@
     if (countEl) countEl.textContent = `Showing ${items.length} of ${all.length} everyday terms`;
     if (items.length === 0) {
       listEl.innerHTML = "";
-      if (emptyState) emptyState.hidden = false;
+      if (emptyState) {
+        emptyState.hidden = false;
+        const titleEl = emptyState.querySelector("p strong");
+        const noteEl = emptyState.querySelector(".small-note");
+        if (all.length === 0) {
+          if (titleEl) titleEl.textContent = "No everyday terms have been imported yet.";
+          if (noteEl) {
+            noteEl.innerHTML = session && session.is_admin
+              ? 'Open <strong>Admin Studio → Common Terms Glossary</strong> and use "Import Glossary JSON" to load your lexicon file. Imported terms appear here instantly.'
+              : "Admins can import a lexicon file to fill this list. Meanwhile, use the search in the Phrase Finder — request any missing word from there too.";
+          }
+        } else if (titleEl) {
+          titleEl.textContent = "No matching everyday terms.";
+          if (noteEl) noteEl.textContent = "Try a shorter word, or request the term from the Phrase Finder.";
+        }
+      }
       return;
     }
     if (emptyState) emptyState.hidden = true;
